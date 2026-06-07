@@ -1,0 +1,65 @@
+import express from 'express';
+import { body, param } from 'express-validator';
+import mongoose from 'mongoose';
+import * as userController from '../controllers/user.controller.js';
+import { protect } from '../middlewares/auth.middleware.js';
+import { upload } from '../middlewares/upload.middleware.js';
+import validate from '../middlewares/validate.middleware.js';
+
+const router = express.Router();
+const isMongoId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+router.use(protect);
+
+router.get('/me', userController.getMe);
+
+router.put('/me', upload.single('avatar'),
+  [body('name').optional().trim().notEmpty().withMessage('Name cannot be empty'), body('bio').optional().trim(), validate],
+  userController.updateMe
+);
+
+router.delete('/me', userController.deleteMe);
+
+// IMPORTANT: /me/fields and /me/notifications must come BEFORE /:username
+// to prevent Express matching 'me' as the username param
+router.put('/me/fields',
+  [
+    body('priorityFields').isArray({ min: 5, max: 5 }).withMessage('You must select exactly 5 priority fields')
+      .custom((arr) => arr.every((id) => isMongoId(id))).withMessage('Priority fields must contain valid field IDs'),
+    validate,
+  ],
+  userController.updateFields
+);
+
+router.put('/me/notifications',
+  [
+    body('emailNotifications').isArray().withMessage('Email notifications must be an array')
+      .custom((arr) => arr.every((id) => isMongoId(id))).withMessage('Email notifications must contain valid field IDs'),
+    validate,
+  ],
+  userController.updateNotifications
+);
+
+router.post('/push-subscription', userController.savePushSubscription);
+
+router.get('/:username',
+  [param('username').trim().notEmpty().withMessage('Username param is required'), validate],
+  userController.getPublicProfile
+);
+
+router.post('/:id/follow',
+  [param('id').isMongoId().withMessage('Invalid User ID format'), validate],
+  userController.toggleFollow
+);
+
+router.get('/:id/followers',
+  [param('id').isMongoId().withMessage('Invalid User ID format'), validate],
+  userController.getFollowers
+);
+
+router.get('/:id/following',
+  [param('id').isMongoId().withMessage('Invalid User ID format'), validate],
+  userController.getFollowing
+);
+
+export default router;

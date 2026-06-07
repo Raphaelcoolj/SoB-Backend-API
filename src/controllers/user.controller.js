@@ -1,0 +1,217 @@
+import User from '../models/User.js';
+import Post from '../models/Post.js';
+import Comment from '../models/Comment.js';
+import Notification from '../models/Notification.js';
+import Field from '../models/Field.js';
+import apiResponse from '../utils/apiResponse.js';
+import { uploadImageToCloudinary } from '../middlewares/upload.middleware.js';
+import sendPushNotification from '../utils/sendPushNotification.js';
+import { getIO } from '../socket/socket.js';
+
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate('priorityFields', 'name slug')
+      .populate('emailNotifications', 'name slug')
+      .select('-password -refreshToken');
+    if (!user) return res.status(404).json(apiResponse.error('User not found.'));
+    return res.status(200).json(apiResponse.success('Profile retrieved successfully.', { user }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error getting profile.'));
+  }
+};
+
+export const updateMe = async (req, res) => {
+  try {
+    const { name, bio } = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json(apiResponse.error('User not found.'));
+
+    if (name) user.name = name;
+    if (bio !== undefined) user.bio = bio;
+
+    if (req.file) {
+      try {
+        const uploadResult = await uploadImageToCloudinary(req.file.buffer, 'sob/avatars');
+        user.avatar = uploadResult.secure_url;
+      } catch {
+        return res.status(500).json(apiResponse.error('Failed to upload avatar to cloud storage.'));
+      }
+    }
+
+    await user.save();
+    const sanitizedUser = user.toObject();
+    delete sanitizedUser.password;
+    delete sanitizedUser.refreshToken;
+    return res.status(200).json(apiResponse.success('Profile updated successfully.', { user: sanitizedUser }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error updating profile.'));
+  }
+};
+
+export const deleteMe = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findByIdAndDelete(userId);
+    if (!user) return res.status(404).json(apiResponse.error('User not found.'));
+
+    await User.updateMany({}, { $pull: { followers: userId, following: userId } });
+
+    const userPosts = await Post.find({ author: userId });
+    const postIds = userPosts.map((p) => p._id);
+    await Comment.deleteMany({ post: { $in: postIds } });
+    await Post.deleteMany({ author: userId });
+    await Comment.deleteMany({ author: userId });
+    await Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] });
+
+    return res.status(200).json(apiResponse.success('Account and all associated data deleted successfully.'));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error during account deletion.'));
+  }
+};
+
+export const getPublicProfile = async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username.toLowerCase() })
+      .populate('priorityFields', 'name slug')
+      .select('-password -refreshToken -email -emailNotifications');
+    if (!user) return res.status(404).json(apiResponse.error('User profile not found.'));
+
+    const postsCount = await Post.countDocuments({ author: user._id, isPublished: true });
+    return res.status(200).json(apiResponse.success('Public profile retrieved successfully.', {
+      user,
+      stats: { followersCount: user.followers.length, followingCount: user.following.length, postsCount },
+    }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error getting public profile.'));
+  }
+};
+
+export const toggleFollow = async (req, res) => {
+  try {
+    const targetUserId = req.params.id;
+    const currentUserId = req.user._id;
+
+    if (targetUserId === currentUserId.toString()) {
+      return res.status(400).json(apiResponse.error('You cannot follow yourself.'));
+    }
+
+    const [targetUser, currentUser] = await Promise.all([User.findById(targetUserId), User.findById(currentUserId)]);
+    if (!targetUser) return res.status(404).json(apiResponse.error('User to follow not found.'));
+
+    const isFollowing = currentUser.following.includes(targetUserId);
+
+    if (isFollowing) {
+      currentUser.following.pull(targetUserId);
+      targetUser.followers.pull(currentUserId);
+    } else {
+      currentUser.following.push(targetUserId);
+      targetUser.followers.push(currentUserId);
+
+      const notification = new Notification({ recipient: targetUserId, sender: currentUserId, type: 'follow' });
+      await notification.save();
+
+      try {
+        getIO().to(targetUserId.toString()).emit('new_notification', {
+          _id: notification._id, sender: { _id: currentUser._id, name: currentUser.name, username: currentUser.username, avatar: currentUser.avatar }, type: 'follow', createdAt: notification.createdAt,
+        });
+
+        if (targetUser.pushSubscription?.endpoint) {
+          sendPushNotification(targetUser._id, targetUser.pushSubscription, {
+            title: 'New Follower',
+            body: `${currentUser.name} started following you.`,
+            url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/profile/${currentUser.username}`
+          });
+        }
+      } catch {}
+    }
+
+    await Promise.all([currentUser.save(), targetUser.save()]);
+    return res.status(200).json(apiResponse.success(isFollowing ? `Unfollowed ${targetUser.username}.` : `Followed ${targetUser.username}.`, { isFollowing: !isFollowing, followersCount: targetUser.followers.length }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error during follow action.'));
+  }
+};
+
+export const getFollowers = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).populate('followers', 'name username avatar bio');
+    if (!user) return res.status(404).json(apiResponse.error('User not found.'));
+    return res.status(200).json(apiResponse.success('Followers list retrieved.', { followers: user.followers }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error getting followers.'));
+  }
+};
+
+export const getFollowing = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).populate('following', 'name username avatar bio');
+    if (!user) return res.status(404).json(apiResponse.error('User not found.'));
+    return res.status(200).json(apiResponse.success('Following list retrieved.', { following: user.following }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error getting following.'));
+  }
+};
+
+export const updateFields = async (req, res) => {
+  try {
+    const { priorityFields } = req.body;
+    if (!Array.isArray(priorityFields) || priorityFields.length !== 5) {
+      return res.status(400).json(apiResponse.error('You must select exactly 5 priority fields.'));
+    }
+    const count = await Field.countDocuments({ _id: { $in: priorityFields } });
+    if (count !== 5) return res.status(400).json(apiResponse.error('One or more selected fields are invalid.'));
+
+    const user = await User.findById(req.user._id);
+    user.priorityFields = priorityFields;
+    await user.save();
+    return res.status(200).json(apiResponse.success('Priority fields updated successfully.', { priorityFields: user.priorityFields }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error updating priority fields.'));
+  }
+};
+
+export const updateNotifications = async (req, res) => {
+  try {
+    const { emailNotifications } = req.body;
+    if (!Array.isArray(emailNotifications)) {
+      return res.status(400).json(apiResponse.error('Email notifications must be an array.'));
+    }
+    const count = await Field.countDocuments({ _id: { $in: emailNotifications } });
+    if (count !== emailNotifications.length) {
+      return res.status(400).json(apiResponse.error('One or more notification fields are invalid.'));
+    }
+    const user = await User.findById(req.user._id);
+    user.emailNotifications = emailNotifications;
+    await user.save();
+    return res.status(200).json(apiResponse.success('Email notification preferences updated.', { emailNotifications: user.emailNotifications }));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error updating notification settings.'));
+  }
+};
+
+export const savePushSubscription = async (req, res) => {
+  try {
+    const { subscription } = req.body;
+    if (!subscription || !subscription.endpoint || !subscription.keys) {
+      return res.status(400).json(apiResponse.error('Invalid push subscription object.'));
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json(apiResponse.error('User not found.'));
+
+    user.pushSubscription = {
+      endpoint: subscription.endpoint,
+      keys: {
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+      },
+    };
+
+    await user.save();
+    return res.status(200).json(apiResponse.success('Push subscription saved successfully.'));
+  } catch (error) {
+    console.error('Save Push Subscription Error:', error.message);
+    return res.status(500).json(apiResponse.error('Internal server error saving push subscription.'));
+  }
+};
