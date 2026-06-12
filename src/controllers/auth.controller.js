@@ -1,13 +1,16 @@
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Field from '../models/Field.js';
 import apiResponse from '../utils/apiResponse.js';
 import { generateAccessToken, generateRefreshToken } from '../utils/generateTokens.js';
+import { sendEmail } from '../utils/sendEmail.js';
+
+// IMPROVED: Helper to generate 5-digit numeric code
+const generateNumericCode = () => Math.floor(10000 + Math.random() * 90000).toString();
 
 export const register = async (req, res) => {
   try {
-    const { name, username, email, password } = req.body;
+    const { name, username, email, password, dob } = req.body;
 
     const existingEmail = await User.findOne({ email: email.toLowerCase() });
     if (existingEmail) return res.status(400).json(apiResponse.error('Email is already registered.'));
@@ -15,7 +18,31 @@ export const register = async (req, res) => {
     const existingUsername = await User.findOne({ username: username.toLowerCase() });
     if (existingUsername) return res.status(400).json(apiResponse.error('Username is already taken.'));
 
-    const user = new User({ name, username: username.toLowerCase(), email: email.toLowerCase(), password, isOnboarded: false });
+    // IMPROVED: Generate verification code
+    const verificationCode = generateNumericCode();
+    const verificationCodeExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    const user = new User({ 
+      name, 
+      username: username.toLowerCase(), 
+      email: email.toLowerCase(), 
+      password, 
+      dob,
+      isOnboarded: false,
+      verificationCode,
+      verificationCodeExpiry
+    });
+
+    // IMPROVED: Send verification email
+    await sendEmail({
+      to: user.email,
+      subject: 'Verify your SoB account',
+      html: `<div style="font-family:sans-serif;padding:20px;border:1px solid #eee;border-radius:10px">
+        <h2>Welcome to SoB!</h2>
+        <p>Your verification code is: <b style="font-size:24px;color:#007bff">${verificationCode}</b></p>
+        <p>This code expires in 24 hours.</p>
+      </div>`
+    });
 
     const accessToken = generateAccessToken(user);
     const rawRefreshToken = generateRefreshToken(user);
@@ -27,11 +54,105 @@ export const register = async (req, res) => {
     const userResponse = user.toObject();
     delete userResponse.password;
     delete userResponse.refreshToken;
+    delete userResponse.verificationCode;
+    delete userResponse.verificationCodeExpiry;
 
-    return res.status(201).json(apiResponse.success('Registration successful. Please complete onboarding.', { user: userResponse, accessToken, refreshToken: rawRefreshToken }));
+    return res.status(201).json(apiResponse.success('Registration successful. Please check your email for the verification code.', { user: userResponse, accessToken, refreshToken: rawRefreshToken }));
   } catch (error) {
     console.error('Registration Error:', error.message);
     return res.status(500).json(apiResponse.error('Internal server error during registration.'));
+  }
+};
+
+// IMPROVED: Email Verification logic
+export const verifyEmail = async (req, res) => {
+  try {
+    const { code } = req.body;
+    const user = await User.findOne({
+      verificationCode: code,
+      verificationCodeExpiry: { $gt: Date.now() }
+    });
+
+    if (!user) return res.status(400).json(apiResponse.error('Invalid or expired verification code.'));
+
+    user.isVerified = true;
+    user.verificationCode = undefined;
+    user.verificationCodeExpiry = undefined;
+    await user.save();
+
+    return res.status(200).json(apiResponse.success('Email verified successfully.'));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Error verifying email.'));
+  }
+};
+
+// IMPROVED: Resend Verification logic
+export const resendVerification = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (user.isVerified) return res.status(400).json(apiResponse.error('Account is already verified.'));
+
+    const verificationCode = generateNumericCode();
+    user.verificationCode = verificationCode;
+    user.verificationCodeExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    await sendEmail({
+      to: user.email,
+      subject: 'Your new SoB verification code',
+      html: `<p>Your new verification code is: <b>${verificationCode}</b>. It expires in 24 hours.</p>`
+    });
+
+    return res.status(200).json(apiResponse.success('Verification code resent.'));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Error resending verification code.'));
+  }
+};
+
+// IMPROVED: Forgot Password logic
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) return res.status(404).json(apiResponse.error('User with this email does not exist.'));
+
+    const resetCode = generateNumericCode();
+    user.resetPasswordCode = resetCode;
+    user.resetPasswordCodeExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await user.save();
+
+    await sendEmail({
+      to: user.email,
+      subject: 'SoB Password Reset',
+      html: `<p>Your password reset code is: <b style="font-size:24px">${resetCode}</b>. It expires in 1 hour.</p>`
+    });
+
+    return res.status(200).json(apiResponse.success('Password reset code sent to your email.'));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Error in forgot password flow.'));
+  }
+};
+
+// IMPROVED: Reset Password logic
+export const resetPassword = async (req, res) => {
+  try {
+    const { code, newPassword } = req.body;
+    const user = await User.findOne({
+      resetPasswordCode: code,
+      resetPasswordCodeExpiry: { $gt: Date.now() }
+    });
+
+    if (!user) return res.status(400).json(apiResponse.error('Invalid or expired reset code.'));
+
+    user.password = newPassword; // Pre-save hook will hash it
+    user.resetPasswordCode = undefined;
+    user.resetPasswordCodeExpiry = undefined;
+    user.refreshToken = null; // Invalidate sessions
+    await user.save();
+
+    return res.status(200).json(apiResponse.success('Password reset successful. Please log in with your new password.'));
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Error resetting password.'));
   }
 };
 

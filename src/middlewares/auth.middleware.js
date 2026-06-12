@@ -23,8 +23,17 @@ export const protect = async (req, res, next) => {
 
     req.user = user;
 
-    // Enforce onboarding check
+    // IMPROVED: Block unverified users from protected routes
     const path = req.baseUrl + req.path;
+    const publicPaths = ['/api/auth/complete-onboarding', '/api/auth/logout', '/api/auth/verify-email', '/api/auth/resend-verification'];
+    
+    if (!user.isVerified && !publicPaths.includes(path)) {
+      return res.status(403).json(
+        apiResponse.error('Email not verified. Please verify your email to continue.', { isVerified: false })
+      );
+    }
+
+    // Enforce onboarding check
     if (!user.isOnboarded && path !== '/api/auth/complete-onboarding' && path !== '/api/auth/logout') {
       return res.status(403).json(
         apiResponse.error('Onboarding incomplete. Please complete your profile to continue.', { isOnboarded: false })

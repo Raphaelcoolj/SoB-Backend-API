@@ -3,6 +3,7 @@ import { body, param } from 'express-validator';
 import * as postController from '../controllers/post.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
 import { upload } from '../middlewares/upload.middleware.js';
+import { uploadRateLimiter } from '../middlewares/rateLimit.middleware.js';
 import validate from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
@@ -16,12 +17,16 @@ router.post('/:id/share', [param('id').isMongoId().withMessage('Invalid Post ID 
 // Protected routes
 router.use(protect);
 
-router.post('/', upload.array('media', 5),
+router.post('/', 
+  uploadRateLimiter,
+  upload.array('media', 5),
   [body('title').trim().notEmpty().withMessage('Post title is required'), body('body').trim().notEmpty().withMessage('Post body is required'), body('field').isMongoId().withMessage('Post field must be a valid ID'), validate],
   postController.createPost
 );
 
-router.put('/:id', upload.array('media', 5),
+router.put('/:id', 
+  uploadRateLimiter,
+  upload.array('media', 5),
   [param('id').isMongoId().withMessage('Invalid Post ID format'), body('title').optional().trim().notEmpty().withMessage('Post title cannot be empty'), body('body').optional().trim().notEmpty().withMessage('Post body cannot be empty'), body('field').optional().isMongoId().withMessage('Invalid field category ID'), validate],
   postController.editPost
 );

@@ -5,6 +5,7 @@ import Notification from '../models/Notification.js';
 import apiResponse from '../utils/apiResponse.js';
 import sendPushNotification from '../utils/sendPushNotification.js';
 import { getIO } from '../socket/socket.js';
+import { logActivity } from '../services/activity.service.js';
 
 const cascadeDeleteComments = async (commentId) => {
   const replies = await Comment.find({ parentComment: commentId });
@@ -30,6 +31,7 @@ export const createComment = async (req, res) => {
     await comment.save();
     post.comments.push(comment._id);
     await post.save();
+    logActivity(authorId, type === 'debate' ? 'debate' : 'comment');
 
     const populatedComment = await Comment.findById(comment._id).populate('author', 'name username avatar');
 

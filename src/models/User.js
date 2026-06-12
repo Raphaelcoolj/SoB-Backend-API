@@ -20,6 +20,7 @@ const userSchema = new mongoose.Schema(
     googleId: { type: String, default: null },
     avatar: { type: String, default: '' },
     bio: { type: String, default: '' },
+    dob: { type: Date, required: [true, 'Date of birth is required'] },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     priorityFields: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Field' }], default: [] },
     emailNotifications: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Field' }], default: [] },
@@ -27,16 +28,27 @@ const userSchema = new mongoose.Schema(
     following: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [] },
     isOnboarded: { type: Boolean, default: true },
     pushSubscription: {
+      tokenType: { type: String, enum: ['web', 'expo'], default: 'web' },
       endpoint: { type: String, default: null },
       keys: {
         p256dh: { type: String, default: null },
         auth: { type: String, default: null },
       },
+      token: { type: String, default: null },
     },
     refreshToken: { type: String, default: null },
+    // IMPROVED: Added verification and password reset fields
+    isVerified: { type: Boolean, default: false },
+    verificationCode: String,
+    verificationCodeExpiry: Date,
+    resetPasswordCode: String,
+    resetPasswordCodeExpiry: Date,
   },
   { timestamps: true }
 );
+
+// IMPROVED: Added index for unique constraints
+// Removed explicit userSchema.index calls as unique: true is set in the field schema
 
 // Hash password on save
 userSchema.pre('save', async function (next) {

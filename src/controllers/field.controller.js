@@ -1,5 +1,6 @@
 import Field from '../models/Field.js';
 import apiResponse from '../utils/apiResponse.js';
+import { getCached, setCache } from '../utils/cache.js';
 
 const slugify = (text) =>
   text.toString().toLowerCase()
@@ -8,7 +9,14 @@ const slugify = (text) =>
 
 export const getAllFields = async (req, res) => {
   try {
-    const fields = await Field.find().sort({ name: 1 });
+    // IMPROVED: Caching for 5 minutes as fields rarely change
+    const cacheKey = 'all_fields';
+    const cachedFields = getCached(cacheKey);
+    if (cachedFields) return res.status(200).json(apiResponse.success('Fields retrieved successfully (cached).', { fields: cachedFields }));
+
+    const fields = await Field.find().sort({ name: 1 }).lean();
+    setCache(cacheKey, fields, 300); // 5 minutes
+
     return res.status(200).json(apiResponse.success('Fields retrieved successfully.', { fields }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error getting fields list.'));

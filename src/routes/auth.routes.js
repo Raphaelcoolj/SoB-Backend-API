@@ -4,6 +4,7 @@ import passport from 'passport';
 import mongoose from 'mongoose';
 import * as authController from '../controllers/auth.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
+import { authRateLimiter } from '../middlewares/rateLimit.middleware.js';
 import validate from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
@@ -12,6 +13,7 @@ const isMongoId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 router.post(
   '/register',
+  authRateLimiter,
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('username').trim().notEmpty().withMessage('Username is required')
@@ -26,6 +28,7 @@ router.post(
 
 router.post(
   '/login',
+  authRateLimiter,
   [
     body('email').trim().isEmail().withMessage('Please enter a valid email address'),
     body('password').notEmpty().withMessage('Password is required'),
@@ -35,6 +38,33 @@ router.post(
 );
 
 router.post('/logout', protect, authController.logout);
+
+// IMPROVED: Added verification and password reset routes
+router.post(
+  '/verify-email',
+  [body('code').isNumeric().isLength({ min: 5, max: 5 }).withMessage('Invalid verification code'), validate],
+  authController.verifyEmail
+);
+
+router.post('/resend-verification', protect, authController.resendVerification);
+
+router.post(
+  '/forgot-password',
+  authRateLimiter,
+  [body('email').trim().isEmail().withMessage('Please enter a valid email address'), validate],
+  authController.forgotPassword
+);
+
+router.post(
+  '/reset-password',
+  authRateLimiter,
+  [
+    body('code').isNumeric().isLength({ min: 5, max: 5 }).withMessage('Invalid reset code'),
+    body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
+    validate,
+  ],
+  authController.resetPassword
+);
 
 router.post(
   '/refresh',

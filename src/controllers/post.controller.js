@@ -4,10 +4,14 @@ import Field from '../models/Field.js';
 import Comment from '../models/Comment.js';
 import Notification from '../models/Notification.js';
 import apiResponse from '../utils/apiResponse.js';
-import { uploadImageToCloudinary, uploadVideoToMux } from '../middlewares/upload.middleware.js';
+import { uploadImageToCloudinary, uploadVideoToMux, validateFileHeader } from '../middlewares/upload.middleware.js';
 import { sendBatchEmail } from '../utils/sendEmail.js';
 import sendPushNotification from '../utils/sendPushNotification.js';
 import { getIO } from '../socket/socket.js';
+import cloudinary from '../config/cloudinary.js';
+import mux from '../config/mux.js';
+import { logActivity } from '../services/activity.service.js';
+import { deleteCacheByPrefix } from '../utils/cache.js';
 
 const parseTags = (tags) => {
   if (!tags) return [];
@@ -17,15 +21,40 @@ const parseTags = (tags) => {
 
 export const createPost = async (req, res) => {
   try {
-    const { title, body, field, tags, isPublished } = req.body;
+    const { title, body, field, tags, isPublished, contentType } = req.body;
     const authorId = req.user._id;
 
-    const categoryField = await Field.findById(field);
+    // Content Type Validation
+    if (contentType === 'post') {
+      if (body.length > 500) return res.status(422).json(apiResponse.error('Post text cannot exceed 500 characters', 'CHAR_LIMIT_EXCEEDED'));
+      if (req.files?.some(f => f.mimetype.startsWith('video/'))) return res.status(422).json(apiResponse.error('Short posts cannot contain videos', 'INVALID_MEDIA_FOR_POST'));
+      if (req.files?.length > 2) return res.status(422).json(apiResponse.error('Short posts support a maximum of 2 images', 'TOO_MANY_IMAGES'));
+    } else if (contentType === 'article') {
+      if (!title) return res.status(422).json(apiResponse.error('Articles must have a title', 'TITLE_REQUIRED'));
+    }
+
+    // IMPROVED: Enforce 4 images OR 1 video limit (for articles)
+    if (req.files?.length > 4) return res.status(400).json(apiResponse.error('Max 4 images allowed per post.'));
+    const hasVideo = req.files?.some(f => f.mimetype.startsWith('video/'));
+    if (hasVideo && req.files?.length > 1) return res.status(400).json(apiResponse.error('A post can only contain 1 video OR up to 4 images.'));
+
+    const categoryField = await Field.findById(field).lean();
     if (!categoryField) return res.status(404).json(apiResponse.error('Field category not found.'));
 
     const mediaUrls = [];
+    const cloudinaryPublicIds = [];
+    let muxAssetId = null;
+    let muxPlaybackId = null;
+
     if (req.files?.length > 0) {
       try {
+        // IMPROVED: Validate magic bytes for all files
+        for (const file of req.files) {
+          if (!validateFileHeader(file.buffer, file.mimetype)) {
+            return res.status(422).json(apiResponse.error(`Invalid media format for file: ${file.originalname}`));
+          }
+        }
+
         const results = await Promise.all(
           req.files.map((f) =>
             f.mimetype.startsWith('video/')
@@ -33,15 +62,36 @@ export const createPost = async (req, res) => {
               : uploadImageToCloudinary(f.buffer, 'sob/posts')
           )
         );
-        results.forEach((r) => mediaUrls.push(r.secure_url));
+
+        results.forEach((r) => {
+          mediaUrls.push(r.secure_url);
+          if (r.public_id) cloudinaryPublicIds.push(r.public_id);
+          if (r.assetId) { muxAssetId = r.assetId; muxPlaybackId = r.playbackId; }
+        });
       } catch (error) {
         console.error('Media upload error:', error.message);
         return res.status(500).json(apiResponse.error('Failed to upload post media.'));
       }
     }
 
-    const post = new Post({ author: authorId, title, body, field, tags: parseTags(tags), mediaUrls, isPublished: isPublished ?? true });
+    const post = new Post({ 
+      author: authorId,
+      contentType,
+      title, 
+      body, 
+      field, 
+      tags: parseTags(tags), 
+      mediaUrls, 
+      cloudinaryPublicIds,
+      muxAssetId,
+      muxPlaybackId,
+      isPublished: isPublished ?? true 
+    });
     await post.save();
+    logActivity(authorId, 'post');
+    deleteCacheByPrefix('fyf:');
+    
+    // ... (rest of the email/notification logic)
 
     // Async: email subscribers in that field
     User.find({ emailNotifications: field, _id: { $ne: authorId } }).select('email').then((users) => {
@@ -88,12 +138,27 @@ export const createPost = async (req, res) => {
 
 export const getAllPosts = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    const total = await Post.countDocuments({ isPublished: true });
-    const posts = await Post.find({ isPublished: true }).populate('author', 'name username avatar bio').populate('field', 'name slug').sort({ createdAt: -1 }).skip(skip).limit(limit);
-    return res.status(200).json(apiResponse.success('Posts retrieved successfully.', { posts }, { page, limit, total }));
+    const { type } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50); // IMPROVED: Default 20, Max 50
+    const lastId = req.query.lastId;
+    
+    // IMPROVED: Cursor-based pagination for better performance on large collections
+    const query = { isPublished: true };
+    if (type) query.contentType = type;
+    if (lastId) query._id = { $lt: lastId };
+
+    const posts = await Post.find(query)
+      .select('title body author field mediaUrls tags likes shares comments createdAt impressions')
+      .populate('author', 'name username avatar')
+      .populate('field', 'name slug')
+      .sort({ _id: -1 }) // Sort by ID for stable cursor pagination
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json(apiResponse.success('Posts retrieved successfully.', { 
+      posts,
+      nextCursor: posts.length === limit ? posts[posts.length - 1]._id : null
+    }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error getting posts.'));
   }
@@ -101,7 +166,16 @@ export const getAllPosts = async (req, res) => {
 
 export const getPostById = async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id).populate('author', 'name username avatar bio').populate('field', 'name slug');
+    // IMPROVED: Increment impressions and use .lean()
+    const post = await Post.findByIdAndUpdate(
+      req.params.id, 
+      { $inc: { impressions: 1 } }, 
+      { new: true }
+    )
+    .populate('author', 'name username avatar bio')
+    .populate('field', 'name slug')
+    .lean();
+
     if (!post) return res.status(404).json(apiResponse.error('Post not found.'));
     return res.status(200).json(apiResponse.success('Post retrieved successfully.', { post }));
   } catch (error) {
@@ -119,7 +193,7 @@ export const editPost = async (req, res) => {
     if (title) post.title = title;
     if (body) post.body = body;
     if (isPublished !== undefined) post.isPublished = isPublished;
-    if (field) { const f = await Field.findById(field); if (!f) return res.status(404).json(apiResponse.error('Invalid field category.')); post.field = field; }
+    if (field) { const f = await Field.findById(field).lean(); if (!f) return res.status(404).json(apiResponse.error('Invalid field category.')); post.field = field; }
     if (tags) post.tags = parseTags(tags);
 
     if (req.files?.length > 0) {
@@ -131,7 +205,11 @@ export const editPost = async (req, res) => {
               : uploadImageToCloudinary(f.buffer, 'sob/posts')
           )
         );
-        results.forEach((r) => post.mediaUrls.push(r.secure_url));
+        results.forEach((r) => {
+          post.mediaUrls.push(r.secure_url);
+          if (r.public_id) post.cloudinaryPublicIds.push(r.public_id);
+          if (r.assetId) { post.muxAssetId = r.assetId; post.muxPlaybackId = r.playbackId; }
+        });
       } catch (error) {
         console.error('Media upload error:', error.message);
         return res.status(500).json(apiResponse.error('Failed to upload new media.'));
@@ -152,10 +230,19 @@ export const deletePost = async (req, res) => {
     if (post.author.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json(apiResponse.error('Forbidden: You are not authorized to delete this post.'));
     }
+
+    // IMPROVED: Automated media cleanup
+    if (post.cloudinaryPublicIds?.length > 0) {
+      await Promise.all(post.cloudinaryPublicIds.map(id => cloudinary.uploader.destroy(id)));
+    }
+    if (post.muxAssetId) {
+      await mux.video.assets.delete(post.muxAssetId).catch(() => {});
+    }
+
     await Post.findByIdAndDelete(req.params.id);
     await Comment.deleteMany({ post: req.params.id });
     await Notification.deleteMany({ post: req.params.id });
-    return res.status(200).json(apiResponse.success('Post and all associated comments deleted successfully.'));
+    return res.status(200).json(apiResponse.success('Post and all associated assets deleted successfully.'));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error deleting post.'));
   }
@@ -200,6 +287,7 @@ export const toggleBookmarkPost = async (req, res) => {
     const isBookmarked = post.bookmarks.includes(req.user._id);
     if (isBookmarked) { post.bookmarks.pull(req.user._id); } else { post.bookmarks.push(req.user._id); }
     await post.save();
+    if (!isBookmarked) logActivity(req.user._id, 'bookmark');
     return res.status(200).json(apiResponse.success(isBookmarked ? 'Removed from bookmarks.' : 'Post bookmarked.', { isBookmarked: !isBookmarked }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error bookmarking post.'));

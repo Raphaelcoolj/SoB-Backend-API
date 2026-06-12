@@ -7,6 +7,20 @@ import apiResponse from '../utils/apiResponse.js';
 import { uploadImageToCloudinary } from '../middlewares/upload.middleware.js';
 import sendPushNotification from '../utils/sendPushNotification.js';
 import { getIO } from '../socket/socket.js';
+import { logActivity } from '../services/activity.service.js';
+import { deleteCacheByPrefix } from '../utils/cache.js';
+
+export const ping = async (req, res) => {
+  try {
+    const { sessionDuration } = req.body;
+    if (sessionDuration >= 900) {
+      logActivity(req.user._id, 'session');
+    }
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Internal server error during ping.'));
+  }
+};
 
 export const getMe = async (req, res) => {
   try {
@@ -127,6 +141,7 @@ export const toggleFollow = async (req, res) => {
     }
 
     await Promise.all([currentUser.save(), targetUser.save()]);
+    if (!isFollowing) logActivity(currentUserId, 'follow');
     return res.status(200).json(apiResponse.success(isFollowing ? `Unfollowed ${targetUser.username}.` : `Followed ${targetUser.username}.`, { isFollowing: !isFollowing, followersCount: targetUser.followers.length }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error during follow action.'));
@@ -165,6 +180,7 @@ export const updateFields = async (req, res) => {
     const user = await User.findById(req.user._id);
     user.priorityFields = priorityFields;
     await user.save();
+    deleteCacheByPrefix(`fyf:${req.user._id}:`);
     return res.status(200).json(apiResponse.success('Priority fields updated successfully.', { priorityFields: user.priorityFields }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error updating priority fields.'));
@@ -193,20 +209,25 @@ export const updateNotifications = async (req, res) => {
 export const savePushSubscription = async (req, res) => {
   try {
     const { subscription } = req.body;
-    if (!subscription || !subscription.endpoint || !subscription.keys) {
-      return res.status(400).json(apiResponse.error('Invalid push subscription object.'));
+    
+    // Validate based on type
+    const isExpo = subscription.tokenType === 'expo';
+    if (isExpo) {
+      if (!subscription.token) return res.status(400).json(apiResponse.error('Expo token is required.'));
+    } else {
+      if (!subscription.endpoint || !subscription.keys) return res.status(400).json(apiResponse.error('Web subscription is missing endpoint or keys.'));
     }
 
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json(apiResponse.error('User not found.'));
 
-    user.pushSubscription = {
-      endpoint: subscription.endpoint,
-      keys: {
-        p256dh: subscription.keys.p256dh,
-        auth: subscription.keys.auth,
-      },
-    };
+    user.pushSubscription = isExpo 
+      ? { tokenType: 'expo', token: subscription.token }
+      : { 
+          tokenType: 'web',
+          endpoint: subscription.endpoint,
+          keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth }
+        };
 
     await user.save();
     return res.status(200).json(apiResponse.success('Push subscription saved successfully.'));
@@ -215,3 +236,4 @@ export const savePushSubscription = async (req, res) => {
     return res.status(500).json(apiResponse.error('Internal server error saving push subscription.'));
   }
 };
+

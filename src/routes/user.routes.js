@@ -4,12 +4,19 @@ import mongoose from 'mongoose';
 import * as userController from '../controllers/user.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
 import { upload } from '../middlewares/upload.middleware.js';
+import { pingRateLimiter } from '../middlewares/rateLimit.middleware.js';
 import validate from '../middlewares/validate.middleware.js';
 
 const router = express.Router();
 const isMongoId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 router.use(protect);
+
+router.post('/ping',
+  pingRateLimiter,
+  [body('sessionDuration').isNumeric().withMessage('Session duration must be a number'), validate],
+  userController.ping
+);
 
 router.get('/me', userController.getMe);
 

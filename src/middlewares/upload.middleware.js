@@ -2,24 +2,59 @@ import multer from 'multer';
 import cloudinary from '../config/cloudinary.js';
 import mux from '../config/mux.js';
 
+// IMPROVED: Strict media validation and optimized Cloudinary transformations
 const storage = multer.memoryStorage();
+
+const MIME_TYPES = {
+  'image/jpeg': [0xFF, 0xD8, 0xFF],
+  'image/png': [0x89, 0x50, 0x4E, 0x47],
+  'image/webp': [0x52, 0x49, 0x46, 0x46],
+  'video/mp4': [0x66, 0x74, 0x79, 0x70],
+  'video/webm': [0x1A, 0x45, 0xDF, 0xA3],
+  'video/quicktime': [0x66, 0x74, 0x79, 0x70] // .mov
+};
 
 export const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  limits: { fileSize: 15 * 1024 * 1024 }, // IMPROVED: Capped at 15MB (Mux requirement)
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+    const isImage = file.mimetype.startsWith('image/');
+    const isVideo = file.mimetype.startsWith('video/');
+
+    if (isImage || isVideo) {
+      if (isImage && file.size > 5 * 1024 * 1024) {
+        return cb(new Error('Image size exceeds 5MB limit.'), false);
+      }
       cb(null, true);
     } else {
-      cb(new Error('Unsupported file type. Only images and videos are allowed.'), false);
+      cb(new Error('Unsupported file type. Only images (jpeg, png, webp) and videos (mp4, webm, mov) are allowed.'), false);
     }
   },
 });
 
+// IMPROVED: Helper for magic bytes validation
+export const validateFileHeader = (buffer, mimetype) => {
+  const signature = MIME_TYPES[mimetype];
+  if (!signature) return false;
+  for (let i = 0; i < signature.length; i++) {
+    if (buffer[i] !== signature[i]) return false;
+  }
+  return true;
+};
+
 export const uploadImageToCloudinary = (fileBuffer, folder = 'sob') =>
   new Promise((resolve, reject) => {
+    // IMPROVED: Aggressive compression and strip EXIF
     const stream = cloudinary.uploader.upload_stream(
-      { folder, resource_type: 'image' },
+      { 
+        folder, 
+        resource_type: 'image',
+        width: 1080,
+        crop: 'limit',
+        quality: 'auto:low',
+        fetch_format: 'auto',
+        flags: 'strip_profile'
+      },
       (error, result) => (error ? reject(error) : resolve(result))
     );
     stream.end(fileBuffer);

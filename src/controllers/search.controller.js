@@ -32,6 +32,7 @@ export const searchUsers = async (req, res) => {
     const searchQuery = { $or: [{ name: { $regex: queryStr, $options: 'i' } }, { username: { $regex: queryStr, $options: 'i' } }] };
     const total = await User.countDocuments(searchQuery);
     const users = await User.find(searchQuery).select('name username avatar bio followers following').skip(skip).limit(limit);
+    if (users.length > 0) logActivity(req.user._id, 'search');
     return res.status(200).json(apiResponse.success('User search completed.', { users }, { page, limit, total }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error during user search.'));

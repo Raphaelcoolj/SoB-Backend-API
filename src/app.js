@@ -22,6 +22,8 @@ import searchRoutes from './routes/search.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 
+import { generalRateLimiter } from './middlewares/rateLimit.middleware.js';
+
 const app = express();
 
 // Security & Optimization
@@ -34,24 +36,8 @@ app.use(cors({
   optionsSuccessStatus: 200,
 }));
 
-// Rate Limiters
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many requests, please try again after 15 minutes.' },
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { success: false, message: 'Too many authentication attempts. Please try again after 15 minutes.' },
-});
-
-app.use(globalLimiter);
+// IMPROVED: Using centralized general rate limiter
+app.use(generalRateLimiter);
 
 // Body Parsers
 app.use(express.json());
@@ -66,7 +52,7 @@ app.get('/', (_req, res) => {
 });
 
 // Mount routes
-app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/comments', commentRoutes);
