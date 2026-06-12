@@ -1,72 +1,115 @@
-import express from 'express';
-import { body, param } from 'express-validator';
-import mongoose from 'mongoose';
-import * as userController from '../controllers/user.controller.js';
-import { protect } from '../middlewares/auth.middleware.js';
-import { upload } from '../middlewares/upload.middleware.js';
-import { pingRateLimiter } from '../middlewares/rateLimit.middleware.js';
-import validate from '../middlewares/validate.middleware.js';
+import express from "express";
+import { body, param } from "express-validator";
+import mongoose from "mongoose";
+import * as userController from "../controllers/user.controller.js";
+import { protect } from "../middlewares/auth.middleware.js";
+import { upload } from "../middlewares/upload.middleware.js";
+import { pingRateLimiter } from "../middlewares/rateLimit.middleware.js";
+import validate from "../middlewares/validate.middleware.js";
 
 const router = express.Router();
 const isMongoId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 router.use(protect);
 
-router.post('/ping',
+router.post(
+  "/ping",
   pingRateLimiter,
-  [body('sessionDuration').isNumeric().withMessage('Session duration must be a number'), validate],
-  userController.ping
+  [
+    body("sessionDuration")
+      .isNumeric()
+      .withMessage("Session duration must be a number"),
+    validate,
+  ],
+  userController.ping,
 );
 
-router.get('/me', userController.getMe);
+router.get("/me", userController.getMe);
 
-router.put('/me', upload.single('avatar'),
-  [body('name').optional().trim().notEmpty().withMessage('Name cannot be empty'), body('bio').optional().trim(), validate],
-  userController.updateMe
+router.put(
+  "/me",
+  upload.single("avatar"),
+  [
+    body("name")
+      .optional()
+      .trim()
+      .notEmpty()
+      .withMessage("Name cannot be empty"),
+    body("bio").optional().trim(),
+    validate,
+  ],
+  userController.updateMe,
 );
 
-router.delete('/me', userController.deleteMe);
+router.delete("/me", userController.deleteMe);
 
 // IMPORTANT: /me/fields and /me/notifications must come BEFORE /:username
 // to prevent Express matching 'me' as the username param
-router.put('/me/fields',
+router.put(
+  "/me/fields",
   [
-    body('priorityFields').isArray({ min: 5, max: 5 }).withMessage('You must select exactly 5 priority fields')
-      .custom((arr) => arr.every((id) => isMongoId(id))).withMessage('Priority fields must contain valid field IDs'),
+    body("priorityFields")
+      .isArray({ min: 5, max: 5 })
+      .withMessage("You must select exactly 5 priority fields")
+      .custom((arr) => arr.every((id) => isMongoId(id)))
+      .withMessage("Priority fields must contain valid field IDs"),
     validate,
   ],
-  userController.updateFields
+  userController.updateFields,
 );
 
-router.put('/me/notifications',
+router.put(
+  "/me/notifications",
   [
-    body('emailNotifications').isArray().withMessage('Email notifications must be an array')
-      .custom((arr) => arr.every((id) => isMongoId(id))).withMessage('Email notifications must contain valid field IDs'),
+    body("emailNotifications")
+      .isArray()
+      .withMessage("Email notifications must be an array")
+      .custom((arr) => arr.every((id) => isMongoId(id)))
+      .withMessage("Email notifications must contain valid field IDs"),
     validate,
   ],
-  userController.updateNotifications
+  userController.updateNotifications,
 );
 
-router.post('/push-subscription', userController.savePushSubscription);
+router.post("/push-subscription", userController.savePushSubscription);
 
-router.get('/:username',
-  [param('username').trim().notEmpty().withMessage('Username param is required'), validate],
-  userController.getPublicProfile
+// PRIVACY & BLOCKING
+router.put("/me/privacy", userController.togglePrivacy);
+router.get("/me/blocked", userController.getBlockedUsers);
+router.post(
+  "/:id/block",
+  [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
+  userController.toggleBlockUser,
 );
 
-router.post('/:id/follow',
-  [param('id').isMongoId().withMessage('Invalid User ID format'), validate],
-  userController.toggleFollow
+router.get(
+  "/:username",
+  [
+    param("username")
+      .trim()
+      .notEmpty()
+      .withMessage("Username param is required"),
+    validate,
+  ],
+  userController.getPublicProfile,
 );
 
-router.get('/:id/followers',
-  [param('id').isMongoId().withMessage('Invalid User ID format'), validate],
-  userController.getFollowers
+router.post(
+  "/:id/follow",
+  [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
+  userController.toggleFollow,
 );
 
-router.get('/:id/following',
-  [param('id').isMongoId().withMessage('Invalid User ID format'), validate],
-  userController.getFollowing
+router.get(
+  "/:id/followers",
+  [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
+  userController.getFollowers,
+);
+
+router.get(
+  "/:id/following",
+  [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
+  userController.getFollowing,
 );
 
 export default router;

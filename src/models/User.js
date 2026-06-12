@@ -43,6 +43,9 @@ const userSchema = new mongoose.Schema(
     verificationCodeExpiry: Date,
     resetPasswordCode: String,
     resetPasswordCodeExpiry: Date,
+    // PRIVACY & SAFETY
+    isPrivate: { type: Boolean, default: false },
+    blockedUsers: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [] },
   },
   { timestamps: true }
 );
