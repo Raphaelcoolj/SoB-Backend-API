@@ -31,7 +31,11 @@ app.use(helmet());
 app.use(compression());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: [
+    process.env.CLIENT_URL, 
+    'http://localhost:3000', 
+    'http://localhost:8081'
+  ].filter(Boolean),
   credentials: true,
   optionsSuccessStatus: 200,
 }));
