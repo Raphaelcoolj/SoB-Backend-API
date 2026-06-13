@@ -8,6 +8,10 @@ import { pingRateLimiter } from "../middlewares/rateLimit.middleware.js";
 import validate from "../middlewares/validate.middleware.js";
 
 const router = express.Router();
+router.use((req, res, next) => {
+  console.log(`User route hit: ${req.method} ${req.path}`);
+  next();
+});
 const isMongoId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // Public routes
