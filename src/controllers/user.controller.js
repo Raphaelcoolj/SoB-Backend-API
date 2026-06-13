@@ -254,15 +254,15 @@ export const getFollowers = async (req, res) => {
     const followers = populatedUser.followers;
     const currentUser = req.user;
 
+    const followingSet = currentUser
+      ? new Set(currentUser.following.map((id) => id.toString()))
+      : new Set();
+
     const followersWithStatus = followers.map((f) => {
       const fObj = f.toObject();
       return {
         ...fObj,
-        isFollowing: currentUser
-          ? currentUser.following.some(
-              (id) => id.toString() === f._id.toString(),
-            )
-          : false,
+        isFollowing: followingSet.has(f._id.toString()),
       };
     });
 
@@ -301,15 +301,15 @@ export const getFollowing = async (req, res) => {
     const following = populatedUser.following;
     const currentUser = req.user;
 
+    const followingSet = currentUser
+      ? new Set(currentUser.following.map((id) => id.toString()))
+      : new Set();
+
     const followingWithStatus = following.map((f) => {
       const fObj = f.toObject();
       return {
         ...fObj,
-        isFollowing: currentUser
-          ? currentUser.following.some(
-              (id) => id.toString() === f._id.toString(),
-            )
-          : false,
+        isFollowing: followingSet.has(f._id.toString()),
       };
     });
 
