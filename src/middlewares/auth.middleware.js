@@ -38,7 +38,7 @@ export const protect = async (req, res, next) => {
     }
 
     // Enforce onboarding check
-    if (!user.isOnboarded && path !== '/api/auth/complete-onboarding' && path !== '/api/auth/logout') {
+    if (!user.isOnboarded && path !== '/api/auth/complete-onboarding' && path !== '/api/auth/logout' && path !== '/api/users/me') {
       console.log('Protect: User not onboarded, path:', path);
       return res.status(403).json(
         apiResponse.error('Onboarding incomplete. Please complete your profile to continue.', { isOnboarded: false })
