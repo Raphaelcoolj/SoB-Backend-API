@@ -268,6 +268,7 @@ export const completeOnboarding = async (req, res) => {
 export const googleSuccess = async (req, res) => {
   try {
     const user = req.user;
+    console.log('Google Success callback for user:', user._id);
     const accessToken = generateAccessToken(user);
     const rawRefreshToken = generateRefreshToken(user);
 
@@ -276,8 +277,11 @@ export const googleSuccess = async (req, res) => {
     await user.save();
 
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    res.redirect(`${clientUrl}/oauth-callback?token=${accessToken}&refreshToken=${rawRefreshToken}&isOnboarded=${user.isOnboarded}`);
+    const redirectUrl = `${clientUrl}/oauth-callback?token=${accessToken}&refreshToken=${rawRefreshToken}&isOnboarded=${user.isOnboarded}`;
+    console.log('Redirecting to:', redirectUrl);
+    res.redirect(redirectUrl);
   } catch (error) {
+    console.error('Google Success Controller Error:', error);
     res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=oauth_failed`);
   }
 };

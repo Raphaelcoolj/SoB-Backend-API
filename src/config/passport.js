@@ -46,8 +46,10 @@ passport.use(
         });
 
         await user.save();
+        console.log('New user created via Google:', user._id);
         return done(null, user);
       } catch (error) {
+        console.error('Google Strategy Error:', error);
         return done(error, null);
       }
     }
