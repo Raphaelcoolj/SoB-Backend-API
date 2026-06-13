@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema(
     googleId: { type: String, default: null },
     avatar: { type: String, default: '' },
     bio: { type: String, default: '' },
-    dob: { type: Date, required: [true, 'Date of birth is required'] },
+    dob: { type: Date, required: function () { return !this.googleId; } },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     priorityFields: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Field' }], default: [] },
     emailNotifications: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Field' }], default: [] },

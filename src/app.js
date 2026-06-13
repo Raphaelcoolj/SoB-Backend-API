@@ -26,6 +26,9 @@ import { generalRateLimiter } from './middlewares/rateLimit.middleware.js';
 
 const app = express();
 
+// Trust proxy for rate limiting (Render/Netlify)
+app.set('trust proxy', 1);
+
 // Security & Optimization
 app.use(helmet());
 app.use(compression());
