@@ -166,7 +166,7 @@ export const resetPassword = async (req, res) => {
 };
 
 // IMPROVED: Email Verification logic
-
+export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
