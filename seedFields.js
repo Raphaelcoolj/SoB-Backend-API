@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import mongoose from 'mongoose';
 import Field from './src/models/Field.js';
 
@@ -16,7 +17,7 @@ const fieldsToSeed = [
 
 async function seed() {
   try {
-    await mongoose.connect('mongodb://localhost:27017/sob');
+    await mongoose.connect(process.env.MONGO_URI);
     console.log('Connected to MongoDB');
 
     for (const name of fieldsToSeed) {
