@@ -45,3 +45,24 @@ export const protect = async (req, res, next) => {
     return res.status(401).json(apiResponse.error('Not authorized, token is invalid or expired'));
   }
 };
+
+export const optionalProtect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization?.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+      const user = await User.findById(decoded.id);
+      if (user) {
+        req.user = user;
+      }
+    } catch (error) {
+      // Ignore token errors for optional protection
+    }
+  }
+  next();
+};

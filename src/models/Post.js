@@ -16,7 +16,11 @@ const postSchema = new mongoose.Schema(
     },
     body: { type: String, required: [true, 'Post body content is required'] },
     mediaUrls: { type: [String], default: [] },
-    field: { type: mongoose.Schema.Types.ObjectId, ref: 'Field', required: [true, 'Post field is required'] },
+    field: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: 'Field', 
+      required: function () { return this.contentType === 'article'; } 
+    },
     tags: { type: [String], default: [] },
     likes: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [] },
     shares: { type: Number, default: 0 },

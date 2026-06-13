@@ -8,12 +8,9 @@ import { sendBatchEmail } from '../utils/sendEmail.js';
 
 export const getAllUsers = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
     const total = await User.countDocuments();
-    const users = await User.find().select('-password -refreshToken').sort({ createdAt: -1 }).skip(skip).limit(limit);
-    return res.status(200).json(apiResponse.success('All users retrieved.', { users }, { page, limit, total }));
+    const users = await User.find().select('-password -refreshToken').sort({ createdAt: -1 });
+    return res.status(200).json(apiResponse.success('All users retrieved.', { users }, { page: 1, limit: total, total }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error retrieving users.'));
   }
@@ -60,12 +57,9 @@ export const deleteUser = async (req, res) => {
 
 export const getAllPostsAdmin = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
     const total = await Post.countDocuments();
-    const posts = await Post.find().populate('author', 'name username email').populate('field', 'name slug').sort({ createdAt: -1 }).skip(skip).limit(limit);
-    return res.status(200).json(apiResponse.success('Admin: All posts retrieved.', { posts }, { page, limit, total }));
+    const posts = await Post.find().populate('author', 'name username email').populate('field', 'name slug').sort({ createdAt: -1 });
+    return res.status(200).json(apiResponse.success('Admin: All posts retrieved.', { posts }, { page: 1, limit: total, total }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error retrieving posts.'));
   }

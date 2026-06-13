@@ -38,8 +38,11 @@ export const createPost = async (req, res) => {
     const hasVideo = req.files?.some(f => f.mimetype.startsWith('video/'));
     if (hasVideo && req.files?.length > 1) return res.status(400).json(apiResponse.error('A post can only contain 1 video OR up to 4 images.'));
 
-    const categoryField = await Field.findById(field).lean();
-    if (!categoryField) return res.status(404).json(apiResponse.error('Field category not found.'));
+    let categoryField = null;
+    if (field) {
+      categoryField = await Field.findById(field).lean();
+      if (!categoryField) return res.status(404).json(apiResponse.error('Field category not found.'));
+    }
 
     const mediaUrls = [];
     const cloudinaryPublicIds = [];
@@ -94,15 +97,17 @@ export const createPost = async (req, res) => {
     // ... (rest of the email/notification logic)
 
     // Async: email subscribers in that field
-    User.find({ emailNotifications: field, _id: { $ne: authorId } }).select('email').then((users) => {
-      const emails = users.map((u) => u.email).filter(Boolean);
-      if (emails.length > 0) {
-        const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-        sendBatchEmail(emails, `New article in ${categoryField.name}: "${title}"`,
-          `<div style="font-family:sans-serif;max-width:600px;margin:auto;padding:20px;border:1px solid #eee"><h2>New Post in ${categoryField.name}</h2><h3>${title}</h3><p>${body.substring(0, 150)}...</p><a href="${clientUrl}/posts/${post._id}" style="background:#007bff;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">Read Full Post</a></div>`
-        );
-      }
-    }).catch((err) => console.error('New post email notice failure:', err.message));
+    if (categoryField) {
+      User.find({ emailNotifications: field, _id: { $ne: authorId } }).select('email').then((users) => {
+        const emails = users.map((u) => u.email).filter(Boolean);
+        if (emails.length > 0) {
+          const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+          sendBatchEmail(emails, `New article in ${categoryField.name}: "${title}"`,
+            `<div style="font-family:sans-serif;max-width:600px;margin:auto;padding:20px;border:1px solid #eee"><h2>New Post in ${categoryField.name}</h2><h3>${title}</h3><p>${body.substring(0, 150)}...</p><a href="${clientUrl}/posts/${post._id}" style="background:#007bff;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block">Read Full Post</a></div>`
+          );
+        }
+      }).catch((err) => console.error('New post email notice failure:', err.message));
+    }
 
     // Async: notify followers via DB + socket + push
     User.findById(authorId).populate('followers', '_id pushSubscription').then(async (authorUser) => {
@@ -282,15 +287,51 @@ export const toggleLikePost = async (req, res) => {
 
 export const toggleBookmarkPost = async (req, res) => {
   try {
+    const userId = req.user._id;
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json(apiResponse.error('Post not found.'));
-    const isBookmarked = post.bookmarks.includes(req.user._id);
-    if (isBookmarked) { post.bookmarks.pull(req.user._id); } else { post.bookmarks.push(req.user._id); }
+    
+    const isBookmarked = post.bookmarks.includes(userId);
+    if (isBookmarked) {
+      post.bookmarks.pull(userId);
+    } else {
+      post.bookmarks.push(userId);
+    }
+    
     await post.save();
-    if (!isBookmarked) logActivity(req.user._id, 'bookmark');
+    if (!isBookmarked) logActivity(userId, 'bookmark');
+    
     return res.status(200).json(apiResponse.success(isBookmarked ? 'Removed from bookmarks.' : 'Post bookmarked.', { isBookmarked: !isBookmarked }));
   } catch (error) {
+    console.error('Bookmark toggle error:', error);
     return res.status(500).json(apiResponse.error('Internal server error bookmarking post.'));
+  }
+};
+
+export const getBookmarks = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const posts = await Post.find({ bookmarks: userId })
+      .populate('author', 'name username avatar')
+      .populate('field', 'name slug')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(); // Use lean for performance
+
+    const total = await Post.countDocuments({ bookmarks: userId });
+    
+    // Debugging: verify if posts are found
+    console.log(`Found ${posts.length} bookmarked posts for user ${userId}`);
+
+    return res.status(200).json(apiResponse.success('Bookmarks retrieved.', { posts }, { total, page, limit }));
+  } catch (error) {
+    console.error('Get Bookmarks error:', error);
+    return res.status(500).json(apiResponse.error('Internal server error retrieving bookmarks.'));
   }
 };
 

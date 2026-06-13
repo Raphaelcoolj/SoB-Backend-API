@@ -233,18 +233,45 @@ export const toggleFollow = async (req, res) => {
 
 export const getFollowers = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).populate(
-      "followers",
-      "name username avatar bio",
-    );
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const user = await User.findById(req.params.id);
     if (!user)
       return res.status(404).json(apiResponse.error("User not found."));
+
+    const populatedUser = await User.findById(req.params.id).populate({
+      path: "followers",
+      select: "name username avatar bio",
+      options: {
+        skip,
+        limit: parseInt(limit),
+      },
+    });
+
+    const followers = populatedUser.followers;
+    const currentUser = req.user;
+
+    const followersWithStatus = followers.map((f) => {
+      const fObj = f.toObject();
+      return {
+        ...fObj,
+        isFollowing: currentUser
+          ? currentUser.following.some(
+              (id) => id.toString() === f._id.toString(),
+            )
+          : false,
+      };
+    });
+
     return res.status(200).json(
       apiResponse.success("Followers list retrieved.", {
-        followers: user.followers,
+        followers: followersWithStatus,
+        hasMore: user.followers.length > skip + followers.length,
       }),
     );
   } catch (error) {
+    console.error("Error in getFollowers:", error);
     return res
       .status(500)
       .json(apiResponse.error("Internal server error getting followers."));
@@ -253,18 +280,45 @@ export const getFollowers = async (req, res) => {
 
 export const getFollowing = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).populate(
-      "following",
-      "name username avatar bio",
-    );
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const user = await User.findById(req.params.id);
     if (!user)
       return res.status(404).json(apiResponse.error("User not found."));
+
+    const populatedUser = await User.findById(req.params.id).populate({
+      path: "following",
+      select: "name username avatar bio",
+      options: {
+        skip,
+        limit: parseInt(limit),
+      },
+    });
+
+    const following = populatedUser.following;
+    const currentUser = req.user;
+
+    const followingWithStatus = following.map((f) => {
+      const fObj = f.toObject();
+      return {
+        ...fObj,
+        isFollowing: currentUser
+          ? currentUser.following.some(
+              (id) => id.toString() === f._id.toString(),
+            )
+          : false,
+      };
+    });
+
     return res.status(200).json(
       apiResponse.success("Following list retrieved.", {
-        following: user.following,
+        following: followingWithStatus,
+        hasMore: user.following.length > skip + following.length,
       }),
     );
   } catch (error) {
+    console.error("Error in getFollowing:", error);
     return res
       .status(500)
       .json(apiResponse.error("Internal server error getting following."));

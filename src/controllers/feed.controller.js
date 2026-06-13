@@ -18,57 +18,70 @@ export const getForYouFeed = async (req, res) => {
     const limit = 20;
     const skip = parseInt(cursor);
     
-    const cacheKey = `fyf:${userId}:${type || 'all'}`;
-    const cachedData = getCached(cacheKey);
-    if (cachedData) return res.status(200).json(apiResponse.success('For-You-Feed retrieved (cached).', cachedData));
-
     const user = await User.findById(userId).select('priorityFields').lean();
     const priorityFields = user.priorityFields || [];
     
-    const baseQuery = { isPublished: true };
-    if (type) baseQuery.contentType = type;
+    const matchQuery = { isPublished: true };
+    if (type) matchQuery.contentType = type;
 
-    const priorityQuery = { ...baseQuery, field: { $in: priorityFields } };
-    const generalQuery = { ...baseQuery, field: { $nin: priorityFields } };
-
-    // Removed rigid limits; rely on server-side memory for now, or could use aggregation with skip/limit
-    const [priorityPosts, generalPosts] = await Promise.all([
-      Post.find(priorityQuery).sort({ createdAt: -1 }).limit(500).populate('author', 'name username avatar').populate('field', 'name slug').lean(),
-      Post.find(generalQuery).sort({ createdAt: -1 }).limit(200).populate('author', 'name username avatar').populate('field', 'name slug').lean()
-    ]);
-
-    // Enhanced scoring: Unobtrusive hybrid (trending + latest)
-    const calculateScore = (post, isPriority) => {
-      const ageInHours = (Date.now() - new Date(post.createdAt)) / (1000 * 60 * 60);
-      
-      // Normalized Engagement
-      const engagementScore = (post.likes.length * 1) + (post.comments.length * 2) + (post.shares * 3) + (post.impressions * 0.01);
-      
-      // Time decay: Newer posts get a boost
-      const timeBoost = Math.max(0, 50 - ageInHours);
-      
-      const fieldBoost = isPriority ? 50 : 0;
-      
-      // Blend trending (engagementScore) and latest (timeBoost)
-      return fieldBoost + engagementScore + timeBoost;
-    };
-
-    const scoredPosts = [
-      ...priorityPosts.map(p => ({ ...p, score: calculateScore(p, true) })),
-      ...generalPosts.map(p => ({ ...p, score: calculateScore(p, false) }))
+    const pipeline = [
+      { $match: matchQuery },
+      {
+        $addFields: {
+          ageInHours: { $divide: [{ $subtract: [new Date(), "$createdAt"] }, 3600000] },
+          likesCount: { $size: { $ifNull: ["$likes", []] } },
+          commentsCount: { $size: { $ifNull: ["$comments", []] } },
+          isPriority: { $in: ["$field", priorityFields] },
+          randomFactor: { $rand: {} } // Add a random factor for variety
+        }
+      },
+      {
+        $addFields: {
+          score: {
+            $add: [
+              { $multiply: ["$likesCount", 1] },
+              { $multiply: ["$commentsCount", 2] },
+              { $multiply: ["$shares", 3] },
+              { $multiply: ["$impressions", 0.01] },
+              { $max: [0, { $subtract: [50, "$ageInHours"] }] }, // timeBoost
+              { $cond: { if: "$isPriority", then: 200, else: 0 } }, // fieldBoost
+              { $multiply: ["$randomFactor", 20] } // Small random boost
+            ]
+          }
+        }
+      },
+      { $sort: { score: -1, _id: -1 } },
+      { $skip: skip },
+      { $limit: limit + 1 }, // Fetch 1 extra to check for hasMore
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'author',
+          foreignField: '_id',
+          as: 'author'
+        }
+      },
+      { $unwind: '$author' },
+      {
+        $lookup: {
+          from: 'fields',
+          localField: 'field',
+          foreignField: '_id',
+          as: 'field'
+        }
+      },
+      { $unwind: { path: '$field', preserveNullAndEmptyArrays: true } }
     ];
 
-    scoredPosts.sort((a, b) => b.score - a.score);
+    const results = await Post.aggregate(pipeline);
     
-    const paginatedPosts = scoredPosts.slice(skip, skip + limit);
-    const nextCursor = (scoredPosts.length > skip + limit) ? (skip + limit) : null;
-    
-    const posts = paginatedPosts.map(({ score, ...post }) => post);
+    const hasMore = results.length > limit;
+    const posts = hasMore ? results.slice(0, limit) : results;
+    const nextCursor = hasMore ? skip + limit : null;
 
-    const responseData = { posts, nextCursor, hasMore: !!nextCursor };
-    setCache(cacheKey, responseData, 60);
-    return res.status(200).json(apiResponse.success('FYF feed fetched', responseData));
+    return res.status(200).json(apiResponse.success('For-You-Feed retrieved.', { posts, nextCursor, hasMore }));
   } catch (error) {
+    console.error('FYF Aggregation Error:', error);
     return res.status(500).json(apiResponse.error('Internal server error getting For-You-Feed.'));
   }
 };

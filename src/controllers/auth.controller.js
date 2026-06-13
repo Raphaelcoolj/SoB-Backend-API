@@ -41,6 +41,8 @@ export const register = async (req, res) => {
         <h2>Welcome to SoB!</h2>
         <p>Your verification code is: <b style="font-size:24px;color:#007bff">${verificationCode}</b></p>
         <p>This code expires in 24 hours.</p>
+        <hr>
+        <p style="font-size:12px;color:#666">If you see this email in spam, please mark it as "Not Spam" to ensure you receive future emails from SoB.</p>
       </div>`
     });
 
@@ -59,8 +61,12 @@ export const register = async (req, res) => {
 
     return res.status(201).json(apiResponse.success('Registration successful. Please check your email for the verification code.', { user: userResponse, accessToken, refreshToken: rawRefreshToken }));
   } catch (error) {
-    console.error('Registration Error:', error.message);
-    return res.status(500).json(apiResponse.error('Internal server error during registration.'));
+    console.error('Registration Error Details:', {
+      message: error.message,
+      stack: error.stack,
+      body: req.body
+    });
+    return res.status(500).json(apiResponse.error('Internal server error during registration.', error.message));
   }
 };
 
@@ -100,7 +106,9 @@ export const resendVerification = async (req, res) => {
     await sendEmail({
       to: user.email,
       subject: 'Your new SoB verification code',
-      html: `<p>Your new verification code is: <b>${verificationCode}</b>. It expires in 24 hours.</p>`
+      html: `<p>Your new verification code is: <b>${verificationCode}</b>. It expires in 24 hours.</p>
+        <hr>
+        <p style="font-size:12px;color:#666">If you see this email in spam, please mark it as "Not Spam" to ensure you receive future emails from SoB.</p>`
     });
 
     return res.status(200).json(apiResponse.success('Verification code resent.'));
@@ -124,7 +132,9 @@ export const forgotPassword = async (req, res) => {
     await sendEmail({
       to: user.email,
       subject: 'SoB Password Reset',
-      html: `<p>Your password reset code is: <b style="font-size:24px">${resetCode}</b>. It expires in 1 hour.</p>`
+      html: `<p>Your password reset code is: <b style="font-size:24px">${resetCode}</b>. It expires in 1 hour.</p>
+        <hr>
+        <p style="font-size:12px;color:#666">If you see this email in spam, please mark it as "Not Spam" to ensure you receive future emails from SoB.</p>`
     });
 
     return res.status(200).json(apiResponse.success('Password reset code sent to your email.'));

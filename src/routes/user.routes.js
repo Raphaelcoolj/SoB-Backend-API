@@ -2,7 +2,7 @@ import express from "express";
 import { body, param } from "express-validator";
 import mongoose from "mongoose";
 import * as userController from "../controllers/user.controller.js";
-import { protect } from "../middlewares/auth.middleware.js";
+import { protect, optionalProtect } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
 import { pingRateLimiter } from "../middlewares/rateLimit.middleware.js";
 import validate from "../middlewares/validate.middleware.js";
@@ -10,6 +10,20 @@ import validate from "../middlewares/validate.middleware.js";
 const router = express.Router();
 const isMongoId = (id) => mongoose.Types.ObjectId.isValid(id);
 
+// Public routes
+router.get(
+  "/:username",
+  [
+    param("username")
+      .trim()
+      .notEmpty()
+      .withMessage("Username param is required"),
+    validate,
+  ],
+  userController.getPublicProfile,
+);
+
+// Protected routes
 router.use(protect);
 
 router.post(
@@ -44,7 +58,8 @@ router.put(
 router.delete("/me", userController.deleteMe);
 
 // IMPORTANT: /me/fields and /me/notifications must come BEFORE /:username
-// to prevent Express matching 'me' as the username param
+// (Note: Since we moved :username to public, this order matters less, 
+// but it is good practice to keep them distinct)
 router.put(
   "/me/fields",
   [
@@ -82,18 +97,6 @@ router.post(
   userController.toggleBlockUser,
 );
 
-router.get(
-  "/:username",
-  [
-    param("username")
-      .trim()
-      .notEmpty()
-      .withMessage("Username param is required"),
-    validate,
-  ],
-  userController.getPublicProfile,
-);
-
 router.post(
   "/:id/follow",
   [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
@@ -102,13 +105,21 @@ router.post(
 
 router.get(
   "/:id/followers",
-  [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
+  [
+    optionalProtect,
+    param("id").isMongoId().withMessage("Invalid User ID format"),
+    validate,
+  ],
   userController.getFollowers,
 );
 
 router.get(
   "/:id/following",
-  [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
+  [
+    optionalProtect,
+    param("id").isMongoId().withMessage("Invalid User ID format"),
+    validate,
+  ],
   userController.getFollowing,
 );
 

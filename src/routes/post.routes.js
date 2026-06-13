@@ -10,6 +10,7 @@ const router = express.Router();
 
 // Public routes
 router.get("/", postController.getAllPosts);
+router.get("/bookmarks", protect, postController.getBookmarks); // Move to top
 router.get(
   "/:id",
   [param("id").isMongoId().withMessage("Invalid Post ID format"), validate],
@@ -34,9 +35,9 @@ router.post(
   uploadRateLimiter,
   upload.array("media", 5),
   [
-    body("title").trim().notEmpty().withMessage("Post title is required"),
+    body("title").optional().trim().notEmpty().withMessage("Post title is required"),
     body("body").trim().notEmpty().withMessage("Post body is required"),
-    body("field").isMongoId().withMessage("Post field must be a valid ID"),
+    body("field").optional().isMongoId().withMessage("Post field must be a valid ID"),
     validate,
   ],
   postController.createPost,
