@@ -35,13 +35,15 @@ export const searchUsers = async (req, res) => {
     const users = await User.find(searchQuery).select('name username avatar bio followers following').skip(skip).limit(limit);
     
     const currentUser = req.user;
+    const followingSet = currentUser
+      ? new Set(currentUser.following.map((id) => id.toString()))
+      : new Set();
+
     const usersWithStatus = users.map((u) => {
       const uObj = u.toObject();
       return {
         ...uObj,
-        isFollowing: currentUser
-          ? currentUser.following.some((id) => id.toString() === u._id.toString())
-          : false,
+        isFollowing: followingSet.has(u._id.toString()),
       };
     });
 
