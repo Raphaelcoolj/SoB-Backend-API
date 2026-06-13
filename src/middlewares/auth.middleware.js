@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import apiResponse from '../utils/apiResponse.js';
 
 export const protect = async (req, res, next) => {
+  console.log('Protect middleware called for path:', req.baseUrl + req.path);
   let token;
 
   if (req.headers.authorization?.startsWith('Bearer')) {
@@ -10,6 +11,7 @@ export const protect = async (req, res, next) => {
   }
 
   if (!token) {
+    console.log('Protect: No token found');
     return res.status(401).json(apiResponse.error('Not authorized, access token missing'));
   }
 
@@ -18,16 +20,18 @@ export const protect = async (req, res, next) => {
     const user = await User.findById(decoded.id);
 
     if (!user) {
+      console.log('Protect: User not found');
       return res.status(401).json(apiResponse.error('Not authorized, user no longer exists'));
     }
 
     req.user = user;
 
-    // IMPROVED: Block unverified users from protected routes
+    // ... (rest of the middleware)
     const path = req.baseUrl + req.path;
     const publicPaths = ['/api/auth/complete-onboarding', '/api/auth/logout', '/api/auth/verify-email', '/api/auth/resend-verification'];
     
     if (!user.isVerified && !publicPaths.includes(path)) {
+      console.log('Protect: User not verified');
       return res.status(403).json(
         apiResponse.error('Email not verified. Please verify your email to continue.', { isVerified: false })
       );
@@ -35,13 +39,16 @@ export const protect = async (req, res, next) => {
 
     // Enforce onboarding check
     if (!user.isOnboarded && path !== '/api/auth/complete-onboarding' && path !== '/api/auth/logout') {
+      console.log('Protect: User not onboarded, path:', path);
       return res.status(403).json(
         apiResponse.error('Onboarding incomplete. Please complete your profile to continue.', { isOnboarded: false })
       );
     }
 
+    console.log('Protect: Authorized');
     next();
   } catch (error) {
+    console.error('Protect Error:', error);
     return res.status(401).json(apiResponse.error('Not authorized, token is invalid or expired'));
   }
 };
