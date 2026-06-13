@@ -233,7 +233,7 @@ export const refresh = async (req, res) => {
 
 export const completeOnboarding = async (req, res) => {
   try {
-    const { username, priorityFields, dob } = req.body;
+    const { username, priorityFields, dob, bio } = req.body;
     const userId = req.user._id;
 
     if (!Array.isArray(priorityFields) || priorityFields.length !== 5) {
@@ -249,6 +249,7 @@ export const completeOnboarding = async (req, res) => {
 
     const user = await User.findById(userId);
     user.username = checkUsername;
+    user.bio = bio; // save bio
     user.priorityFields = priorityFields;
     user.emailNotifications = priorityFields;
     user.dob = dob;
