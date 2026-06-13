@@ -21,7 +21,13 @@ export const getForYouFeed = async (req, res) => {
     const user = await User.findById(userId).select('priorityFields').lean();
     const priorityFields = user.priorityFields || [];
     
-    const matchQuery = { isPublished: true };
+    const matchQuery = { 
+      isPublished: true,
+      $or: [
+        { field: { $exists: true } },
+        { field: null, contentType: 'post' } // include fieldless short posts
+      ]
+    };
     if (type) matchQuery.contentType = type;
 
     const pipeline = [
@@ -37,6 +43,23 @@ export const getForYouFeed = async (req, res) => {
       },
       {
         $addFields: {
+          fieldBoost: {
+            $cond: {
+              if: { $eq: ["$field", null] },
+              then: 20, // fieldless short posts get flat boost
+              else: {
+                $cond: {
+                  if: "$isPriority",
+                  then: 70,
+                  else: 30
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
           score: {
             $add: [
               { $multiply: ["$likesCount", 1] },
@@ -44,8 +67,9 @@ export const getForYouFeed = async (req, res) => {
               { $multiply: ["$shares", 3] },
               { $multiply: ["$impressions", 0.01] },
               { $max: [0, { $subtract: [50, "$ageInHours"] }] }, // timeBoost
-              { $cond: { if: "$isPriority", then: 200, else: 0 } }, // fieldBoost
-              { $multiply: ["$randomFactor", 20] } // Small random boost
+              "$fieldBoost", // use computed fieldBoost
+              { $multiply: ["$randomFactor", 20] }, // Small random boost
+              { $cond: { if: { $eq: ["$contentType", "article"] }, then: 10, else: 5 } } // contentTypeBoost
             ]
           }
         }
