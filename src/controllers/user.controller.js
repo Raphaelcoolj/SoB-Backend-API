@@ -25,6 +25,7 @@ export const ping = async (req, res) => {
 };
 
 export const getMe = async (req, res) => {
+  console.log('getMe controller called for user:', req.user?._id);
   try {
     const user = await User.findById(req.user._id)
       .populate("priorityFields", "name slug")
@@ -36,6 +37,7 @@ export const getMe = async (req, res) => {
       .status(200)
       .json(apiResponse.success("Profile retrieved successfully.", { user }));
   } catch (error) {
+    console.error('getMe Error:', error);
     return res
       .status(500)
       .json(apiResponse.error("Internal server error getting profile."));
