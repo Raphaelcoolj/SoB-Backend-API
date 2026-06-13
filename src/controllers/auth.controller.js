@@ -165,18 +165,8 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-const setAuthCookie = (res, user, accessToken, refreshToken) => {
-  const authState = { state: { accessToken, refreshToken, user } };
-  res.cookie('sob-auth', JSON.stringify(authState), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    path: '/'
-  });
-};
+// IMPROVED: Email Verification logic
 
-export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -200,8 +190,6 @@ export const login = async (req, res) => {
     const userResponse = user.toObject();
     delete userResponse.password;
     delete userResponse.refreshToken;
-
-    setAuthCookie(res, userResponse, accessToken, rawRefreshToken);
 
     return res.status(200).json(apiResponse.success('Login successful.', { user: userResponse, accessToken, refreshToken: rawRefreshToken }));
   } catch (error) {
@@ -294,10 +282,8 @@ export const googleSuccess = async (req, res) => {
     delete userResponse.password;
     delete userResponse.refreshToken;
 
-    setAuthCookie(res, userResponse, accessToken, rawRefreshToken);
-
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const redirectUrl = `${clientUrl}/oauth-callback?isOnboarded=${user.isOnboarded}`;
+    const redirectUrl = `${clientUrl}/oauth-callback?token=${accessToken}&refreshToken=${rawRefreshToken}&isOnboarded=${user.isOnboarded}`;
     console.log('Redirecting to:', redirectUrl);
     res.redirect(redirectUrl);
   } catch (error) {
