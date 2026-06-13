@@ -1,6 +1,6 @@
 import Field from '../models/Field.js';
 import apiResponse from '../utils/apiResponse.js';
-import { getCached, setCache } from '../utils/cache.js';
+import { getCached, setCache, deleteCache } from '../utils/cache.js';
 
 const slugify = (text) =>
   text.toString().toLowerCase()
@@ -32,6 +32,7 @@ export const createField = async (req, res) => {
 
     const field = new Field({ name, slug, isDefault: false, createdBy: req.user._id });
     await field.save();
+    deleteCache('all_fields');
     return res.status(201).json(apiResponse.success('Field created successfully.', { field }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error creating field.'));
@@ -42,6 +43,7 @@ export const deleteField = async (req, res) => {
   try {
     const field = await Field.findByIdAndDelete(req.params.id);
     if (!field) return res.status(404).json(apiResponse.error('Field not found.'));
+    deleteCache('all_fields');
     return res.status(200).json(apiResponse.success('Field deleted successfully.'));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error deleting field.'));
