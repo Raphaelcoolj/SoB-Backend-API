@@ -4,9 +4,14 @@ import Field from './src/models/Field.js';
 const fieldsToSeed = [
   'Technology',
   'Science',
+  'Religion',
   'Astronomy',
-  'Archeology',
-  'Sports'
+  'Business',
+  'Travel',
+  'Lifestyle',
+  'Sports',
+  'Music',
+  'History'
 ];
 
 async function seed() {

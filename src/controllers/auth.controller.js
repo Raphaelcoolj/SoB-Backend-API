@@ -10,7 +10,7 @@ const generateNumericCode = () => Math.floor(10000 + Math.random() * 90000).toSt
 
 export const register = async (req, res) => {
   try {
-    const { name, username, email, password, dob } = req.body;
+    const { name, username, email, password } = req.body;
 
     const existingEmail = await User.findOne({ email: email.toLowerCase() });
     if (existingEmail) return res.status(400).json(apiResponse.error('Email is already registered.'));
@@ -27,7 +27,6 @@ export const register = async (req, res) => {
       username: username.toLowerCase(), 
       email: email.toLowerCase(), 
       password, 
-      dob,
       isOnboarded: false,
       verificationCode,
       verificationCodeExpiry
@@ -234,7 +233,7 @@ export const refresh = async (req, res) => {
 
 export const completeOnboarding = async (req, res) => {
   try {
-    const { username, priorityFields } = req.body;
+    const { username, priorityFields, dob } = req.body;
     const userId = req.user._id;
 
     if (!Array.isArray(priorityFields) || priorityFields.length !== 5) {
@@ -252,6 +251,7 @@ export const completeOnboarding = async (req, res) => {
     user.username = checkUsername;
     user.priorityFields = priorityFields;
     user.emailNotifications = priorityFields;
+    user.dob = dob;
     user.isOnboarded = true;
     await user.save();
 
