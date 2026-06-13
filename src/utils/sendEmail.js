@@ -1,16 +1,13 @@
-import * as SibApiV3Sdk from '@getbrevo/brevo'
-import apiInstance from '../config/brevo.js'
+import brevo from '../config/brevo.js'
 
 export const sendEmail = async ({ to, subject, html }) => {
-  const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail()
-
-  sendSmtpEmail.subject = subject
-  sendSmtpEmail.htmlContent = html
-  sendSmtpEmail.sender = { name: 'SoB', email: 'noreply@sobplatform.com' }
-  sendSmtpEmail.to = [{ email: to }]
-
   try {
-    await apiInstance.sendTransacEmail(sendSmtpEmail)
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject: subject,
+      htmlContent: html,
+      sender: { name: 'SoB', email: 'noreply@sobplatform.com' },
+      to: [{ email: to }]
+    })
   } catch (error) {
     throw new Error(`Brevo email error: ${error.message}`)
   }
