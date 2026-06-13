@@ -14,36 +14,10 @@ router.use((req, res, next) => {
 });
 const isMongoId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-// Public routes
-router.get(
-  "/:username",
-  [
-    param("username")
-      .trim()
-      .notEmpty()
-      .withMessage("Username param is required"),
-    validate,
-  ],
-  userController.getPublicProfile,
-);
-
-// Protected routes
+// Protected routes (move to top to protect all)
 router.use(protect);
 
-router.post(
-  "/ping",
-  pingRateLimiter,
-  [
-    body("sessionDuration")
-      .isNumeric()
-      .withMessage("Session duration must be a number"),
-    validate,
-  ],
-  userController.ping,
-);
-
 router.get("/me", userController.getMe);
-
 router.put(
   "/me",
   upload.single("avatar"),
@@ -58,12 +32,7 @@ router.put(
   ],
   userController.updateMe,
 );
-
 router.delete("/me", userController.deleteMe);
-
-// IMPORTANT: /me/fields and /me/notifications must come BEFORE /:username
-// (Note: Since we moved :username to public, this order matters less, 
-// but it is good practice to keep them distinct)
 router.put(
   "/me/fields",
   [
@@ -76,7 +45,6 @@ router.put(
   ],
   userController.updateFields,
 );
-
 router.put(
   "/me/notifications",
   [
@@ -89,12 +57,35 @@ router.put(
   ],
   userController.updateNotifications,
 );
-
-router.post("/push-subscription", userController.savePushSubscription);
-
-// PRIVACY & BLOCKING
 router.put("/me/privacy", userController.togglePrivacy);
 router.get("/me/blocked", userController.getBlockedUsers);
+router.post("/push-subscription", userController.savePushSubscription);
+router.post(
+  "/ping",
+  pingRateLimiter,
+  [
+    body("sessionDuration")
+      .isNumeric()
+      .withMessage("Session duration must be a number"),
+    validate,
+  ],
+  userController.ping,
+);
+
+// Public/Optional routes (re-add protected status for specific handlers if needed)
+router.get(
+  "/:username",
+  [
+    param("username")
+      .trim()
+      .notEmpty()
+      .withMessage("Username param is required"),
+    validate,
+  ],
+  userController.getPublicProfile,
+);
+
+// Other routes that might need protection
 router.post(
   "/:id/block",
   [param("id").isMongoId().withMessage("Invalid User ID format"), validate],
