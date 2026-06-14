@@ -110,16 +110,35 @@ export const createPost = async (req, res) => {
     }
 
     // Async: notify followers via DB + socket + push
-    User.findById(authorId).populate('followers', '_id pushSubscription').then(async (authorUser) => {
+    User.findById(authorId).populate('followers', '_id name pushSubscription').then(async (authorUser) => {
       if (authorUser?.followers.length > 0) {
         const followersList = authorUser.followers.map((f) => f._id);
-        await Notification.insertMany(followersList.map((fId) => ({ recipient: fId, sender: authorId, type: 'new_post', post: post._id })));
+        
+        // FIXED: Bulk create notifications
+        const notifications = followersList.map((fId) => ({ 
+          recipient: fId, 
+          sender: authorId, 
+          type: 'new_post', 
+          post: post._id 
+        }));
+        await Notification.insertMany(notifications);
+
         try {
           const io = getIO();
           authorUser.followers.forEach((follower) => {
             const fId = follower._id.toString();
             // Socket notification
-            io.to(fId).emit('new_notification', { type: 'new_post', post: { _id: post._id, title: post.title }, sender: { _id: authorUser._id, name: authorUser.name, username: authorUser.username, avatar: authorUser.avatar }, createdAt: new Date() });
+            io.to(fId).emit('new_notification', { 
+              type: 'new_post', 
+              post: { _id: post._id, title: post.title }, 
+              sender: { 
+                _id: authorUser._id, 
+                name: authorUser.name, 
+                username: authorUser.username, 
+                avatar: authorUser.avatar 
+              }, 
+              createdAt: new Date() 
+            });
             
             // Push notification
             if (follower.pushSubscription?.endpoint) {
@@ -130,7 +149,9 @@ export const createPost = async (req, res) => {
               });
             }
           });
-        } catch {}
+        } catch (e) {
+          console.error('Socket/Push error:', e.message);
+        }
       }
     }).catch((err) => console.error('New post follower notice failure:', err.message));
 
