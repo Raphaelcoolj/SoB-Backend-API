@@ -21,6 +21,7 @@ export const searchPosts = async (req, res) => {
   }
 };
 export const searchUsers = async (req, res) => {
+  console.log('[searchUsers] Entered controller. Query:', req.query);
   try {
     const { q } = req.query;
     const limit = parseInt(req.query.limit) || 10;
