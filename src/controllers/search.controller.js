@@ -20,35 +20,45 @@ export const searchPosts = async (req, res) => {
     return res.status(500).json(apiResponse.error('Internal server error during post search.'));
   }
 };
-
 export const searchUsers = async (req, res) => {
   try {
-    const queryStr = req.query.q || '';
-    const page = parseInt(req.query.page) || 1;
+    const { q } = req.query;
     const limit = parseInt(req.query.limit) || 10;
+    const page = parseInt(req.query.page) || 1;
     const skip = (page - 1) * limit;
 
-    if (!queryStr.trim()) return res.status(200).json(apiResponse.success('Search query is empty.', { users: [] }, { page, limit, total: 0 }));
+    if (!q || !q.trim()) return res.status(200).json(apiResponse.success('Search query is empty.', { users: [] }));
 
+    const queryStr = q.trim();
     const searchQuery = { $or: [{ name: { $regex: queryStr, $options: 'i' } }, { username: { $regex: queryStr, $options: 'i' } }] };
     const total = await User.countDocuments(searchQuery);
+
     // FIXED: Select badge fields and followers for follow status check
     const users = await User.find(searchQuery).select('name username avatar bio followers earlyAdopter founderBadge').skip(skip).limit(limit).lean();
 
     const currentUserId = req.user?._id;
 
+    console.log('[searchUsers] currentUserId:', currentUserId?.toString());
+
     // FIXED: Add isFollowing flag based on the followers array of each result
-    const usersWithStatus = users.map((u) => ({
-      ...u,
-      isFollowing: u.followers?.some(
+    const usersWithStatus = users.map((u) => {
+      const isFollowing = u.followers?.some(
         (followerId) => followerId.toString() === currentUserId?.toString()
-      ) || false,
-      followers: undefined, // Don't expose full followers array to client
-    }));
+      ) || false;
+
+      console.log(`[searchUsers] ${u.username} - isFollowing:`, isFollowing, 'followersCount:', u.followers?.length || 0);
+
+      return {
+        ...u,
+        isFollowing,
+        followers: undefined, // Don't expose full followers array to client
+      };
+    });
 
     if (users.length > 0 && currentUserId) logActivity(currentUserId, 'search');
-    return res.status(200).json(apiResponse.success('User search completed.', { users: usersWithStatus }, { page: limit, total }));
+    return res.status(200).json(apiResponse.success('User search completed.', { users: usersWithStatus }, { page, limit, total }));
   } catch (error) {
+    console.error('[searchUsers] Error:', error);
     return res.status(500).json(apiResponse.error('Internal server error during user search.'));
   }
 };
