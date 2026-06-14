@@ -109,7 +109,7 @@ export const getForYouFeed = async (req, res) => {
           field: "$fieldData"
         }
       },
-      { $project: { fieldData: 0 } }
+      { $project: { fieldData: 0, _id: 1 } } // FIXED: Explicitly keep _id
     ];
 
     const results = await Post.aggregate(pipeline);

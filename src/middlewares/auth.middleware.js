@@ -4,6 +4,7 @@ import apiResponse from '../utils/apiResponse.js';
 
 export const protect = async (req, res, next) => {
   console.log('Protect middleware called for path:', req.baseUrl + req.path);
+  console.log('Request headers:', JSON.stringify(req.headers));
   let token;
 
   if (req.headers.authorization?.startsWith('Bearer')) {
@@ -11,7 +12,7 @@ export const protect = async (req, res, next) => {
   }
 
   if (!token) {
-    console.log('Protect: No token found');
+    console.log('Protect: No token found in Authorization header');
     return res.status(401).json(apiResponse.error('Not authorized, access token missing'));
   }
 
