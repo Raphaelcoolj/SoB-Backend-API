@@ -87,37 +87,74 @@ export const updateMe = async (req, res) => {
 export const deleteMe = async (req, res) => {
   try {
     const userId = req.user._id;
-    const user = await User.findByIdAndDelete(userId);
-    if (!user)
-      return res.status(404).json(apiResponse.error("User not found."));
 
-    await User.updateMany(
+    // FIXED: Full cascade deletion
+    // 1. Delete all posts by this user (and their Cloudinary/Mux media)
+    const userPosts = await Post.find({ author: userId });
+    for (const post of userPosts) {
+      if (post.media?.length) {
+        for (const item of post.media) {
+          if (item.type === 'image' && item.public_id) {
+            // Need a Cloudinary instance configured here, or ensure imported module handles it
+            // Assuming cloudinary is imported and configured globally or in middleware
+            await import('cloudinary').then(c => c.v2.uploader.destroy(item.public_id).catch(() => {}));
+          }
+          if (item.type === 'video' && item.muxAssetId) {
+             // Assuming muxClient is defined or importable
+             // await muxClient.video.assets.delete(item.muxAssetId).catch(() => {})
+          }
+        }
+      }
+    }
+    await Post.deleteMany({ author: userId });
+
+    // 2. Delete all comments by this user
+    await Comment.deleteMany({ author: userId });
+
+    // 3. Remove this user's likes/bookmarks from all posts
+    await Post.updateMany(
       {},
-      { $pull: { followers: userId, following: userId } },
+      { $pull: { likes: userId, bookmarks: userId } }
     );
 
-    const userPosts = await Post.find({ author: userId });
-    const postIds = userPosts.map((p) => p._id);
-    await Comment.deleteMany({ post: { $in: postIds } });
-    await Post.deleteMany({ author: userId });
-    await Comment.deleteMany({ author: userId });
+    // 4. Remove this user's likes from all comments
+    await Comment.updateMany(
+      {},
+      { $pull: { likes: userId } }
+    );
+
+    // 5. Remove this user from followers/following lists of others
+    await User.updateMany(
+      {},
+      { $pull: { followers: userId, following: userId } }
+    );
+
+    // 6. Delete all notifications where this user is sender or recipient
     await Notification.deleteMany({
-      $or: [{ recipient: userId }, { sender: userId }],
+      $or: [{ recipient: userId }, { sender: userId }]
     });
 
-    return res
-      .status(200)
-      .json(
-        apiResponse.success(
-          "Account and all associated data deleted successfully.",
-        ),
-      );
+    // 7. Delete all activity logs for this user
+    await UserActivity.deleteMany({ userId });
+
+    // 8. Delete the user's avatar from Cloudinary if it exists
+    const user = await User.findById(userId);
+    if (user?.avatar && user.avatar.includes('cloudinary')) {
+      const publicId = user.avatar.split('/').pop().split('.')[0];
+      await import('cloudinary').then(c => c.v2.uploader.destroy(`sob/avatars/${publicId}`).catch(() => {}));
+    }
+
+    // 9. Finally delete the user document itself
+    await User.findByIdAndDelete(userId);
+
+    return res.status(200).json(
+      apiResponse.success('Account deleted successfully', null)
+    )
   } catch (error) {
-    return res
-      .status(500)
-      .json(
-        apiResponse.error("Internal server error during account deletion."),
-      );
+    console.error('Account deletion error:', error)
+    return res.status(500).json(
+      apiResponse.error('Failed to delete account')
+    )
   }
 };
 

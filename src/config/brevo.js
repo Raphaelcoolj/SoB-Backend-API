@@ -1,7 +1,14 @@
-import { BrevoClient } from '@getbrevo/brevo';
+import * as SibApiV3Sdk from '@getbrevo/brevo'
 
-const brevo = new BrevoClient({ 
-  apiKey: process.env.BREVO_API_KEY 
-});
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi()
+apiInstance.setApiKey(
+  SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey,
+  process.env.BREVO_API_KEY
+)
 
-export default brevo;
+// FIXED: Add warning if API key is missing
+if (!process.env.BREVO_API_KEY) {
+  console.warn('⚠️ BREVO_API_KEY is not set — emails will fail to send')
+}
+
+export default apiInstance

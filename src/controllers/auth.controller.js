@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Field from '../models/Field.js';
 import apiResponse from '../utils/apiResponse.js';
@@ -219,15 +220,27 @@ export const refresh = async (req, res) => {
     } catch {
       return res.status(401).json(apiResponse.error('Invalid or expired refresh token.'));
     }
-
     const user = await User.findById(decoded.id);
-    if (!user?.refreshToken) return res.status(401).json(apiResponse.error('Session expired. Please log in again.'));
+    // FIXED: verify the user still exists in DB
+    if (!user) {
+      return res.status(401).json(apiResponse.error('User no longer exists', 'USER_DELETED'));
+    }
 
+    // FIXED: Verify stored refresh token matches
     const isMatch = await user.compareRefreshToken(refreshToken);
     if (!isMatch) return res.status(401).json(apiResponse.error('Session invalid. Please log in again.'));
 
-    return res.status(200).json(apiResponse.success('Token refreshed successfully.', { accessToken: generateAccessToken(user) }));
+    // FIXED: Issue new tokens (rotation)
+    const newAccessToken = generateAccessToken(user);
+    const newRawRefreshToken = generateRefreshToken(user);
+
+    const salt = await bcrypt.genSalt(12);
+    user.refreshToken = await bcrypt.hash(newRawRefreshToken, salt);
+    await user.save();
+
+    return res.status(200).json(apiResponse.success('Token refreshed successfully.', { accessToken: newAccessToken, refreshToken: newRawRefreshToken }));
   } catch (error) {
+    console.error('Refresh token error:', error.message);
     return res.status(500).json(apiResponse.error('Internal server error during token refresh.'));
   }
 };
@@ -248,22 +261,23 @@ export const completeOnboarding = async (req, res) => {
     const existingUser = await User.findOne({ username: checkUsername, _id: { $ne: userId } });
     if (existingUser) return res.status(400).json(apiResponse.error('Username is already taken by another user.'));
 
-    const user = await User.findById(userId);
-    user.username = checkUsername;
-    user.bio = bio; // save bio
-    user.priorityFields = priorityFields;
-    user.emailNotifications = priorityFields;
-    user.dob = dob;
-    user.isOnboarded = true;
-    await user.save();
+    // FIXED: Using findByIdAndUpdate for consistent field updates
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        username: checkUsername,
+        bio: bio || '',
+        priorityFields,
+        emailNotifications: priorityFields,
+        dob,
+        isOnboarded: true,
+      },
+      { new: true }
+    ).select('-password -refreshToken');
 
-    const userResponse = user.toObject();
-    delete userResponse.password;
-    delete userResponse.refreshToken;
-
-    return res.status(200).json(apiResponse.success('Onboarding completed successfully.', { user: userResponse }));
+    return res.status(200).json(apiResponse.success('Onboarding completed successfully.', { user: updatedUser }));
   } catch (error) {
-    return res.status(500).json(apiResponse.error('Internal server error during onboarding completion.'));
+    return res.status(500).json(apiResponse.error('Internal server error during onboarding completion.', error.message));
   }
 };
 

@@ -17,11 +17,11 @@ export const protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-    const user = await User.findById(decoded.id);
 
+    // FIXED: verify the user still exists in DB
+    const user = await User.findById(decoded.id).select('-password');
     if (!user) {
-      console.log('Protect: User not found');
-      return res.status(401).json(apiResponse.error('Not authorized, user no longer exists'));
+      return res.status(401).json(apiResponse.error('User no longer exists', 'USER_DELETED'));
     }
 
     req.user = user;
