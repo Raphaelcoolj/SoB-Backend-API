@@ -210,6 +210,26 @@ export const getPostById = async (req, res) => {
   }
 };
 
+// NEW: Public post preview for OG metadata
+export const getPostPreview = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const post = await Post.findById(id)
+      .select('title body contentType mediaUrls author')
+      .populate('author', 'name username avatar')
+      .lean();
+
+    if (!post) {
+      return res.status(404).json(apiResponse.error('Post not found'));
+    }
+
+    return res.status(200).json(apiResponse.success('Preview retrieved', { post }));
+  } catch (error) {
+    console.error('[getPostPreview] Error:', error);
+    return res.status(500).json(apiResponse.error('Failed to retrieve preview'));
+  }
+};
+
 export const editPost = async (req, res) => {
   try {
     const { title, body, field, tags, isPublished } = req.body;

@@ -16,6 +16,12 @@ router.get(
   [param("id").isMongoId().withMessage("Invalid Post ID format"), validate],
   postController.getPostById,
 );
+// NEW: Public preview route for OG metadata
+router.get(
+  "/:id/preview",
+  [param("id").isMongoId().withMessage("Invalid Post ID format"), validate],
+  postController.getPostPreview,
+);
 router.get(
   "/user/:userId",
   [param("userId").isMongoId().withMessage("Invalid User ID format"), validate],
