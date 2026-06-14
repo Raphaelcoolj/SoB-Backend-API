@@ -194,10 +194,11 @@ export const getPostById = async (req, res) => {
   try {
     // IMPROVED: Increment impressions and use .lean()
     const post = await Post.findByIdAndUpdate(
-      req.params.id, 
-      { $inc: { impressions: 1 } }, 
+      req.params.id,
+      { $inc: { impressions: 1 } },
       { new: true }
     )
+    .select('title body author field mediaUrls contentType tags likes shares bookmarks comments createdAt impressions muxPlaybackId')
     .populate('author', 'name username avatar bio')
     .populate('field', 'name slug')
     .lean();

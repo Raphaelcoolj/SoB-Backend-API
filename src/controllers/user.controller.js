@@ -172,9 +172,17 @@ export const getPublicProfile = async (req, res) => {
       author: user._id,
       isPublished: true,
     });
+
+    const isFollowing = user.followers.some(
+      (followerId) => followerId.toString() === req.user?._id?.toString()
+    );
+
     return res.status(200).json(
       apiResponse.success("Public profile retrieved successfully.", {
-        user,
+        user: {
+          ...user.toObject(),
+          isFollowing,
+        },
         stats: {
           followersCount: user.followers.length,
           followingCount: user.following.length,
@@ -252,6 +260,10 @@ export const toggleFollow = async (req, res) => {
 
     await Promise.all([currentUser.save(), targetUser.save()]);
     if (!isFollowing) logActivity(currentUserId, "follow");
+    
+    // NEW: Invalidate FYF cache after follow/unfollow
+    deleteCacheByPrefix(`fyf:${currentUserId}:`);
+
     return res.status(200).json(
       apiResponse.success(
         isFollowing

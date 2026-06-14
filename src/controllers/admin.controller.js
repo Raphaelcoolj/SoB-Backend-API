@@ -5,6 +5,7 @@ import Field from '../models/Field.js';
 import Notification from '../models/Notification.js';
 import apiResponse from '../utils/apiResponse.js';
 import { sendBatchEmail } from '../utils/sendEmail.js';
+import { invalidateCacheByPrefix } from '../utils/cache.js';
 
 export const getAllUsers = async (req, res) => {
   try {
@@ -92,5 +93,65 @@ export const getStats = async (req, res) => {
     return res.status(200).json(apiResponse.success('Platform stats retrieved.', { users: usersCount, posts: postsCount, fields: fieldsCount, comments: commentsCount }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error compiling stats.'));
+  }
+};
+
+// NEW: Toggle Founder Badge
+export const toggleFounderBadge = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { founderBadge } = req.body; // boolean
+
+    const user = await User.findByIdAndUpdate(
+      id,
+      { founderBadge },
+      { new: true }
+    ).select('name username founderBadge');
+
+    if (!user) {
+      return res.status(404).json(apiResponse.error('User not found'));
+    }
+
+    return res.status(200).json(
+      apiResponse.success(
+        `Founder badge ${founderBadge ? 'awarded' : 'removed'} successfully.`,
+        { user }
+      )
+    );
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Failed to update founder badge'));
+  }
+};
+
+// NEW: Update field boost weight
+export const updateFieldBoost = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { boostWeight } = req.body;
+
+    if (typeof boostWeight !== 'number' || boostWeight < 0.1 || boostWeight > 5.0) {
+      return res.status(422).json(
+        apiResponse.error('boostWeight must be a number between 0.1 and 5.0')
+      );
+    }
+
+    const field = await Field.findByIdAndUpdate(
+      id,
+      { boostWeight },
+      { new: true }
+    );
+
+    if (!field) {
+      return res.status(404).json(apiResponse.error('Field not found'));
+    }
+
+    // Invalidate FYF caches since scoring changed for all users
+    invalidateCacheByPrefix('fyf:');
+
+    return res.status(200).json(
+      apiResponse.success('Field boost updated', { field })
+    );
+  } catch (error) {
+    return res.status(500).json(apiResponse.error('Failed to update field boost'));
   }
 };

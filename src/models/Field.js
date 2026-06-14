@@ -6,6 +6,13 @@ const fieldSchema = new mongoose.Schema(
     slug: { type: String, required: [true, 'Field slug is required'], unique: true, trim: true, lowercase: true },
     isDefault: { type: Boolean, default: false },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    // NEW: admin-adjustable boost multiplier for this field
+    boostWeight: { 
+      type: Number, 
+      default: 1.0,
+      min: 0.1,
+      max: 5.0
+    }
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );

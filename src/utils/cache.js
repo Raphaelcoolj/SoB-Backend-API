@@ -38,10 +38,13 @@ export const deleteCache = (key) => {
   cache.delete(key);
 };
 
-export const deleteCacheByPrefix = (prefix) => {
+// NEW: remove all cache entries whose key starts with the given prefix
+export const invalidateCacheByPrefix = (prefix) => {
   for (const key of cache.keys()) {
     if (key.startsWith(prefix)) cache.delete(key);
   }
 };
+
+export const deleteCacheByPrefix = invalidateCacheByPrefix;
 
 export default cache;

@@ -32,23 +32,22 @@ export const searchUsers = async (req, res) => {
 
     const searchQuery = { $or: [{ name: { $regex: queryStr, $options: 'i' } }, { username: { $regex: queryStr, $options: 'i' } }] };
     const total = await User.countDocuments(searchQuery);
-    const users = await User.find(searchQuery).select('name username avatar bio followers following').skip(skip).limit(limit);
-    
-    const currentUser = req.user;
-    const followingSet = currentUser
-      ? new Set(currentUser.following.map((id) => id.toString()))
-      : new Set();
+    // FIXED: Select badge fields and followers for follow status check
+    const users = await User.find(searchQuery).select('name username avatar bio followers earlyAdopter founderBadge').skip(skip).limit(limit).lean();
 
-    const usersWithStatus = users.map((u) => {
-      const uObj = u.toObject();
-      return {
-        ...uObj,
-        isFollowing: followingSet.has(u._id.toString()),
-      };
-    });
+    const currentUserId = req.user?._id;
 
-    if (users.length > 0 && currentUser) logActivity(currentUser._id, 'search');
-    return res.status(200).json(apiResponse.success('User search completed.', { users: usersWithStatus }, { page, limit, total }));
+    // FIXED: Add isFollowing flag based on the followers array of each result
+    const usersWithStatus = users.map((u) => ({
+      ...u,
+      isFollowing: u.followers?.some(
+        (followerId) => followerId.toString() === currentUserId?.toString()
+      ) || false,
+      followers: undefined, // Don't expose full followers array to client
+    }));
+
+    if (users.length > 0 && currentUserId) logActivity(currentUserId, 'search');
+    return res.status(200).json(apiResponse.success('User search completed.', { users: usersWithStatus }, { page: limit, total }));
   } catch (error) {
     return res.status(500).json(apiResponse.error('Internal server error during user search.'));
   }

@@ -18,6 +18,17 @@ router.get(
   ],
   feedController.getTopPostsByField,
 ); // IMPROVED: Top 50 posts per field
+
+// NEW: Field-specific discover feed
+router.get(
+  "/discover/:fieldId",
+  [
+    param("fieldId").isMongoId().withMessage("Invalid Field ID format"),
+    validate,
+  ],
+  feedController.getFieldDiscoverFeed
+);
+
 router.get(
   "/field/:fieldId",
   [

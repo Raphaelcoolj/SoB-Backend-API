@@ -19,6 +19,10 @@ export const register = async (req, res) => {
     const existingUsername = await User.findOne({ username: username.toLowerCase() });
     if (existingUsername) return res.status(400).json(apiResponse.error('Username is already taken.'));
 
+    // NEW: Assign early adopter badge based on total user count
+    const userCount = await User.countDocuments();
+    const earlyAdopter = userCount < 500;
+
     // IMPROVED: Generate verification code
     const verificationCode = generateNumericCode();
     const verificationCodeExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -30,7 +34,8 @@ export const register = async (req, res) => {
       password, 
       isOnboarded: false,
       verificationCode,
-      verificationCodeExpiry
+      verificationCodeExpiry,
+      earlyAdopter // NEW: Assign the badge
     });
 
     // IMPROVED: Send verification email

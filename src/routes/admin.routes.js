@@ -110,6 +110,30 @@ router.put(
   adminController.updateUserRole,
 );
 
+// NEW: Founder Badge Route
+router.put(
+  "/users/:id/founder-badge",
+  [
+    param("id").isMongoId().withMessage("Invalid User ID format"),
+    body("founderBadge").isBoolean().withMessage("founderBadge must be a boolean"),
+    validate,
+  ],
+  adminController.toggleFounderBadge,
+);
+
+// NEW: Field Boost Route
+router.put(
+  "/fields/:id/boost",
+  [
+    param("id").isMongoId().withMessage("Invalid Field ID format"),
+    body("boostWeight")
+      .isFloat({ min: 0.1, max: 5.0 })
+      .withMessage("boostWeight must be a number between 0.1 and 5.0"),
+    validate,
+  ],
+  adminController.updateFieldBoost,
+);
+
 router.get("/posts", adminController.getAllPostsAdmin);
 router.delete(
   "/posts/:id",

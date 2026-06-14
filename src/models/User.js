@@ -46,6 +46,9 @@ const userSchema = new mongoose.Schema(
     // PRIVACY & SAFETY
     isPrivate: { type: Boolean, default: false },
     blockedUsers: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [] },
+    // NEW: Badge fields
+    earlyAdopter: { type: Boolean, default: false },
+    founderBadge: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

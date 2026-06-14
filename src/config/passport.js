@@ -35,6 +35,10 @@ passport.use(
         const randomNum = Math.floor(Math.random() * 10000);
         const tempUsername = `user_${shortGoogleId}_${randomNum}`;
 
+        // NEW: Assign early adopter badge based on total user count
+        const userCount = await User.countDocuments();
+        const earlyAdopter = userCount < 500;
+
         user = new User({
           name: profile.displayName || 'Google User',
           username: tempUsername,
@@ -44,6 +48,7 @@ passport.use(
           isOnboarded: false,
           isVerified: true, // Auto-verify Google users
           role: 'user',
+          earlyAdopter // NEW: Assign the badge
         });
 
         await user.save();
